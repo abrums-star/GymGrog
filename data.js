@@ -1,4 +1,6 @@
 // GymGrog exercise pool and session templates.
+// Photos in img/<id>-0.jpg (start) and img/<id>-1.jpg (end) come from the public-domain
+// free-exercise-db (https://github.com/yuhonas/free-exercise-db, Unlicense).
 // Patterns are fixed; the exercise inside a pattern rotates every 4-week block.
 
 export const PATTERNS = {
@@ -171,6 +173,6 @@ export const DEFAULT_SETTINGS = {
   goalPer14: 6,            // goal (3/week)
   targetWeight: null,      // kg
   defaultRest: 90,
-  sound: true,
+  notify: true,            // silent system notification when rest is over
   vibrate: true,
 };

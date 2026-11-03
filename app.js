@@ -28,6 +28,7 @@ function fmtDate(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString(un
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 const exById = id => EXERCISES.find(e => e.id === id);
+const pics = ex => `<div class="pics">${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="${esc(ex.name)}, ${n ? 'end' : 'start'} position" loading="lazy" data-action="zoom" data-id="${ex.id}">`).join('')}</div>`;
 const statusOf = ex => S.exerciseStatus[ex.id] || ex.status;
 function blockNumber(iso = today()) { return Math.max(0, Math.floor(daysBetween(S.settings.programStart, iso) / S.settings.blockDays)); }
 function daysToNextBlock() { const b = blockNumber() + 1; return b * S.settings.blockDays - daysBetween(S.settings.programStart, today()); }
@@ -48,6 +49,24 @@ function swapExercise(tpl, slotIdx) {
   if (pool.length < 2) return;
   const i = pool.findIndex(e => e.id === cur?.id);
   S.overrides[`${blockNumber()}:${tpl.id}:${slotIdx}`] = pool[(i + 1) % pool.length].id; save();
+}
+// Drop an exercise for good (status "never"). Refuses if it is the last one for its pattern.
+function banExercise(ex, pattern) {
+  const rest = poolFor(pattern).filter(x => x.id !== ex.id);
+  if (!rest.length) { alert(`${ex.name} is the only "${PATTERNS[pattern].name}" exercise left. Rate another one "ok" in the exercise library first.`); return false; }
+  S.exerciseStatus[ex.id] = 'never'; toast(`${ex.name} is out of your program. Bring it back in Program › Exercise library.`); return true;
+}
+// Mid-session: swap (keep it in the program) or ban (never again), then put the replacement in this slot.
+function replaceLive(ei, ban) {
+  const a = S.active; const en = a.entries[ei]; const old = exById(en.exerciseId);
+  if (ban) { if (!banExercise(old, en.pattern)) return; }
+  const pool = poolFor(en.pattern); if (!ban && pool.length < 2) return;
+  const i = pool.findIndex(x => x.id === en.exerciseId); const ex = pool[(i + 1) % pool.length];
+  const sg = suggest(ex, { reps: en.reps });
+  en.exerciseId = ex.id; en.note = sg.note; en.sets.forEach(s => { if (!s.done) { s.w = sg.w; s.r = sg.r; } });
+  if (en.slot != null) S.overrides[`${blockNumber()}:${a.templateId}:${en.slot}`] = ex.id;
+  if (timer.iv && timer.label.includes(old.name)) timer.label = timer.label.replace(old.name, ex.name);
+  save(); render();
 }
 function nextTemplate() { return TEMPLATES[S.nextIdx % TEMPLATES.length]; }
 
@@ -77,11 +96,11 @@ function startSession(tpl) {
   const entries = tpl.slots.map((slot, i) => {
     const ex = pickExercise(tpl, i); if (!ex) return null;
     const sg = suggest(ex, slot);
-    return { exerciseId: ex.id, pattern: slot.pattern, rest: slot.rest, reps: slot.reps, note: sg.note,
+    return { exerciseId: ex.id, slot: i, pattern: slot.pattern, rest: slot.rest, reps: slot.reps, note: sg.note,
       sets: Array.from({ length: slot.sets }, () => ({ w: sg.w, r: sg.r, done: false })) };
   }).filter(Boolean);
   S.active = { id: uid(), date: today(), templateId: tpl.id, templateName: tpl.name, startedAt: Date.now(), entries, cur: 0, notes: '' };
-  save(); requestWakeLock(); go('session');
+  save(); requestWakeLock(); ensureNotifyPermission(); go('session');
 }
 function finishSession() {
   const a = S.active; if (!a) return;
@@ -93,38 +112,59 @@ function finishSession() {
 function discardSession() { if (!confirm('Discard this session? Nothing will be saved.')) return; S.active = null; stopTimer(); releaseWakeLock(); save(); go('home'); }
 
 // ---------- rest timer ----------
-let timer = { end: 0, iv: null, over: false };
+let timer = { end: 0, iv: null, over: false, label: '' };
 const timerEl = document.getElementById('timer');
-function startTimer(sec) {
+function startTimer(sec, label = '') {
   stopTimer(); if (!sec) return;
-  timer = { end: Date.now() + sec * 1000, iv: setInterval(tickTimer, 250), over: false };
+  timer = { end: Date.now() + sec * 1000, iv: setInterval(tickTimer, 250), over: false, label };
   timerEl.classList.remove('hidden', 'over'); tickTimer();
 }
 function tickTimer() {
+  if (!timer.iv) return;
   const left = Math.ceil((timer.end - Date.now()) / 1000);
   if (left <= 0 && !timer.over) { timer.over = true; timerEl.classList.add('over'); notify(); }
-  const shown = Math.abs(left); const m = Math.floor(shown / 60), s = shown % 60;
-  timerEl.innerHTML = `<div class="t">${timer.over ? 'GO ' : ''}${m}:${String(s).padStart(2, '0')}</div>
+  const shown = Math.abs(left); const m = Math.floor(shown / 60), sec = shown % 60;
+  timerEl.innerHTML = `<div class="t">${timer.over ? 'GO ' : ''}${m}:${String(sec).padStart(2, '0')}<small>${esc(timer.label)}</small></div>
     <button data-action="timer-add">+30s</button><button data-action="timer-stop">${timer.over ? 'OK' : 'Skip'}</button>`;
 }
-function stopTimer() { clearInterval(timer.iv); timer.iv = null; timerEl.classList.add('hidden'); }
+function stopTimer() { clearInterval(timer.iv); timer.iv = null; timerEl.classList.add('hidden'); closeNotifications(); }
+// Silent by design: nobody else in the gym needs to hear it. Vibration while the app is on screen,
+// plus a silent system notification so the phone still shows something when you are in another app.
 function notify() {
-  if (S.settings.vibrate && navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
-  if (S.settings.sound) beep();
+  if (S.settings.vibrate && navigator.vibrate) { try { navigator.vibrate([200, 100, 200, 100, 400]); } catch (e) { /* ignore */ } }
+  if (!S.settings.notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const title = 'GymGrog · rest over'; const opts = { body: timer.label || 'Back to it.', tag: 'gymgrog-rest', renotify: true, silent: true, icon: './icon.svg' };
+  const fallback = () => { try { new Notification(title, opts); } catch (e) { /* ignore */ } };
+  if (navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(r => r ? r.showNotification(title, opts) : fallback()).catch(fallback);
+  else fallback();
 }
-let audio;
-function beep() {
-  try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-    [0, .25, .5].forEach(t => { const o = audio.createOscillator(), g = audio.createGain(); o.connect(g); g.connect(audio.destination);
-      o.frequency.value = 880; g.gain.setValueAtTime(.3, audio.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + t + .2);
-      o.start(audio.currentTime + t); o.stop(audio.currentTime + t + .2); });
-  } catch (e) { /* no audio */ }
+function closeNotifications() {
+  try { navigator.serviceWorker?.getRegistration().then(r => r?.getNotifications({ tag: 'gymgrog-rest' })).then(ns => ns?.forEach(n => n.close())).catch(() => {}); } catch (e) { /* ignore */ }
+}
+function ensureNotifyPermission() {
+  if (S.settings.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { Notification.requestPermission().catch(() => {}); } catch (e) { /* ignore */ } }
+}
+function notifyState() {
+  if (typeof Notification === 'undefined') return '<span class="pill never">not available here (on iPhone: add GymGrog to the home screen first)</span>';
+  const p = Notification.permission;
+  return p === 'granted' ? '<span class="pill like">allowed</span>' : p === 'denied' ? '<span class="pill never">blocked in the phone settings</span>' : '<span class="pill unknown">tap Save to allow</span>';
+}
+function nextUpLabel(ei) {
+  const a = S.active; const en = a.entries[ei]; const ex = exById(en.exerciseId);
+  const k = en.sets.findIndex(x => !x.done);
+  if (k >= 0) return `Next: set ${k + 1} of ${en.sets.length}, ${ex.name}`;
+  const nx = a.entries.slice(ei + 1).find(e => e.sets.some(x => !x.done));
+  return nx ? `Next: ${exById(nx.exerciseId).name}` : null;
+}
+let toastT;
+function toast(msg) {
+  let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 4000);
 }
 let wakeLock = null;
 async function requestWakeLock() { try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) { /* ignore */ } }
 function releaseWakeLock() { try { wakeLock?.release(); wakeLock = null; } catch (e) { /* ignore */ } }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.active) requestWakeLock(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') return; if (S.active) requestWakeLock(); if (timer.iv) { tickTimer(); if (timer.over) closeNotifications(); } });
 
 // ---------- regularity ----------
 function last14() {
@@ -189,9 +229,9 @@ function session() {
     const repLabel = unit === 'time' ? 'sec' : unit === 'min' ? 'min' : 'reps';
     return `<div class="card ex ${ei === a.cur ? 'current' : ''} ${done ? 'done' : ''} ${ei === a.cur ? 'open' : ''}" data-entry="${ei}">
       <div class="row between"><div><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel} · rest ${en.rest}s</p></div>
-        <div class="row"><button class="sm" data-action="swap-live" data-entry="${ei}" title="Swap exercise">⇄</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
+        <div class="row nowrap"><button class="sm" data-action="swap-live" data-entry="${ei}" title="Swap for another exercise today">⇄</button><button class="sm" data-action="ban-live" data-entry="${ei}" title="Never again: drop it and replace it">✕</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
       <p class="prev">${esc(en.note)}</p>
-      <p class="cues">${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p>
+      <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
       <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg' : ''}</span><span class="hdr">${repLabel}</span><span class="hdr">✓</span>
       ${en.sets.map((s, si) => `<span class="n">${si + 1}</span>
         ${hasW ? `<input type="number" step="${ex.step || 0.5}" inputmode="decimal" value="${s.w ?? ''}" data-field="w" data-entry="${ei}" data-set="${si}" placeholder="kg">` : `<span class="n">${unit === 'bw' ? 'bw' : ''}</span>`}
@@ -240,16 +280,16 @@ function chart(ws) {
 
 function program() {
   const all = [...TEMPLATES, SHORT_TEMPLATE];
-  return `<h1>Program</h1><p class="muted">Block ${blockNumber() + 1} · exercises rotate in ${daysToNextBlock()} days. Patterns stay fixed, the exercise inside each one changes every ${S.settings.blockDays} days from the pool you rate "like" or "ok". Tap ⇄ to swap one for this block.</p>
+  return `<h1>Program</h1><p class="muted">Block ${blockNumber() + 1} · exercises rotate in ${daysToNextBlock()} days. Patterns stay fixed, the exercise inside each one changes every ${S.settings.blockDays} days from the pool you rate "like" or "ok". Tap ⇄ to swap one for this block, ✕ to drop an exercise for good.</p>
   ${all.map(t => `<div class="card"><h3>${esc(t.name)}</h3><p class="muted small">${esc(t.tagline)}</p>
     ${t.slots.map((s, i) => { const ex = pickExercise(t, i); const pool = poolFor(s.pattern);
-      return `<div class="row between" style="padding:6px 0;border-bottom:1px solid #334155"><div><div>${ex ? esc(ex.name) : '<span class="muted">no exercise available</span>'}</div><div class="muted small">${esc(PATTERNS[s.pattern].name)} · ${s.sets}×${s.reps[0]}${s.reps[1] !== s.reps[0] ? '–' + s.reps[1] : ''}</div></div>
-        <button class="sm" data-action="swap" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''}>⇄</button></div>`; }).join('')}
+      return `<div class="row between nowrap" style="padding:6px 0;border-bottom:1px solid #334155"><div><div>${ex ? esc(ex.name) : '<span class="muted">no exercise available</span>'}</div><div class="muted small">${esc(PATTERNS[s.pattern].name)} · ${s.sets}×${s.reps[0]}${s.reps[1] !== s.reps[0] ? '–' + s.reps[1] : ''}</div></div>
+        <div class="row nowrap"><button class="sm" data-action="swap" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''}>⇄</button><button class="sm" data-action="ban" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''} title="Never again">✕</button></div></div>`; }).join('')}
   </div>`).join('')}
-  <h2>Exercise library</h2><p class="muted small">Like = picked first. Ok = in rotation. Never = out. Unknown = parked until you try it (open the ? in a session to see how it works).</p>
+  <h2>Exercise library</h2><p class="muted small">Like = picked first. Ok = in rotation. Never = out. Unknown = parked until you try it. Tap a photo to see the machine and the movement.</p>
   <div class="card lib">${Object.keys(PATTERNS).map(p => `<h3 style="margin-top:10px">${esc(PATTERNS[p].name)} <span class="muted small">${esc(PATTERNS[p].muscles)}</span></h3>
     ${EXERCISES.filter(e => e.pattern === p).map(e => { const st = statusOf(e);
-      return `<div class="item"><span class="name">${esc(e.name)} ${e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
+      return `<div class="item"><img class="thumb" src="img/${e.id}-0.jpg" alt="" loading="lazy" data-action="zoom" data-id="${e.id}"><span class="name">${esc(e.name)} ${e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
         <select data-action="status" data-id="${e.id}">${['like', 'ok', 'never', 'unknown'].map(s => `<option value="${s}" ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`; }).join('')}`).join('')}</div>`;
 }
 
@@ -261,7 +301,7 @@ function settings() {
     <label>Minimum sessions per 14 days</label><input type="number" id="s-min" value="${s.targetPer14}">
     <label>Goal sessions per 14 days</label><input type="number" id="s-goal" value="${s.goalPer14}">
     <label>Target weight (kg)</label><input type="number" step="0.1" id="s-target" value="${s.targetWeight ?? ''}" placeholder="optional">
-    <label><input type="checkbox" id="s-sound" ${s.sound ? 'checked' : ''} style="width:auto"> Beep when rest is over</label>
+    <label><input type="checkbox" id="s-notify" ${s.notify ? 'checked' : ''} style="width:auto"> Silent notification when rest is over (shows even if you are in another app) ${notifyState()}</label>
     <label><input type="checkbox" id="s-vibrate" ${s.vibrate ? 'checked' : ''} style="width:auto"> Vibrate when rest is over</label>
     <button class="primary" data-action="save-settings" style="margin-top:10px">Save</button></div>
   <div class="card"><h3>Next session</h3><p class="muted small">Queue position. Change if you want to force a different one next.</p>
@@ -287,15 +327,18 @@ document.addEventListener('click', e => {
       if (!kg) return; S.weights = S.weights.filter(w => w.date !== date); S.weights.push({ date, kg }); S.weights.sort((x, y) => x.date < y.date ? -1 : 1); save(); render(); break; }
     case 'del-weight': S.weights = S.weights.filter(w => w.date !== d.date); save(); render(); break;
     case 'done': { const en = S.active.entries[+d.entry], st = en.sets[+d.set]; st.done = !st.done;
-      if (st.done) { const ex = exById(en.exerciseId); if (ex.unit === 'kg' && st.w == null) st.w = null;
-        const lastSet = en.sets.every(s => s.done); if (lastSet) S.active.cur = Math.min(S.active.entries.length - 1, +d.entry + 1);
-        startTimer(en.rest); } save(); render(); break; }
+      if (st.done) { const lastSet = en.sets.every(s => s.done); if (lastSet) S.active.cur = Math.min(S.active.entries.length - 1, +d.entry + 1);
+        const label = nextUpLabel(+d.entry); if (label) startTimer(en.rest, label); else stopTimer(); } save(); render(); break; }
     case 'add-set': { const en = S.active.entries[+d.entry]; const l = en.sets[en.sets.length - 1]; en.sets.push({ w: l?.w ?? null, r: l?.r ?? null, done: false }); save(); render(); break; }
     case 'skip-ex': { const en = S.active.entries[+d.entry]; const all = en.sets.every(s => s.done); en.sets.forEach(s => s.done = !all); if (!all) S.active.cur = Math.min(S.active.entries.length - 1, +d.entry + 1); save(); render(); break; }
     case 'cues': b.closest('.ex').classList.toggle('open'); break;
-    case 'swap-live': { const en = S.active.entries[+d.entry]; const pool = poolFor(en.pattern); if (pool.length < 2) return;
-      const i = pool.findIndex(x => x.id === en.exerciseId); const ex = pool[(i + 1) % pool.length]; const sg = suggest(ex, { reps: en.reps });
-      en.exerciseId = ex.id; en.note = sg.note; en.sets.forEach(s => { if (!s.done) { s.w = sg.w; s.r = sg.r; } }); save(); render(); break; }
+    case 'swap-live': replaceLive(+d.entry, false); break;
+    case 'ban-live': replaceLive(+d.entry, true); break;
+    case 'ban': { const t = tplById(d.tpl); const ex = pickExercise(t, +d.slot); if (!ex) break;
+      if (!banExercise(ex, t.slots[+d.slot].pattern)) break; save(); render(); break; }
+    case 'zoom': { const ex = exById(d.id); if (!ex) break; const lb = document.getElementById('lightbox');
+      lb.innerHTML = `<h3>${esc(ex.name)}</h3>${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="">`).join('')}<p>${esc(ex.cues)}</p><p class="muted small">${esc(ex.equipment)} · tap anywhere to close</p>`;
+      lb.classList.remove('hidden'); break; }
     case 'finish': S.active.notes = document.getElementById('notes').value; finishSession(); break;
     case 'discard': discardSession(); break;
     case 'timer-add': timer.end += 30000; timer.over = false; timerEl.classList.remove('over'); tickTimer(); break;
@@ -305,7 +348,7 @@ document.addEventListener('click', e => {
     case 'set-next': S.nextIdx = +d.idx; save(); render(); break;
     case 'save-settings': { const g = id => document.getElementById(id); S.settings = { ...S.settings, programStart: g('s-start').value || S.settings.programStart,
         blockDays: +g('s-block').value || 28, targetPer14: +g('s-min').value || 4, goalPer14: +g('s-goal').value || 6,
-        targetWeight: parseFloat(g('s-target').value) || null, sound: g('s-sound').checked, vibrate: g('s-vibrate').checked }; save(); render(); alert('Saved'); break; }
+        targetWeight: parseFloat(g('s-target').value) || null, notify: g('s-notify').checked, vibrate: g('s-vibrate').checked }; save(); ensureNotifyPermission(); render(); toast('Saved'); break; }
     case 'export': { const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(blob);
       const l = document.createElement('a'); l.href = u; l.download = `gymgrog-${today()}.json`; l.click(); URL.revokeObjectURL(u); break; }
     case 'import': document.getElementById('imp').click(); break;
@@ -322,6 +365,7 @@ document.addEventListener('input', e => {
   const st = S.active.entries[+t.dataset.entry].sets[+t.dataset.set];
   st[t.dataset.field] = t.value === '' ? null : parseFloat(t.value); save();
 });
+document.getElementById('lightbox').addEventListener('click', e => e.currentTarget.classList.add('hidden'));
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'wq') document.querySelector('[data-action=log-weight]')?.click(); });
 setInterval(() => { if (current === 'session' && S.active && document.activeElement?.tagName !== 'INPUT') { /* keep elapsed fresh without stealing focus */ const h = view.querySelector('h1 + .muted'); if (h) h.textContent = `${Math.floor((Date.now() - S.active.startedAt) / 60000)} min`; } }, 30000);
 

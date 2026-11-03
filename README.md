@@ -1,5 +1,7 @@
 # GymGrog
 
+Live: https://abrums-star.github.io/GymGrog/ (add it to your phone home screen; it works offline).
+
 A tiny, offline-first gym companion built for one person: lose weight, train the back, fit the gym around surfing.
 
 - **Program**: three rotating full-body sessions (A: pull + legs, B: push + legs, C: circuit) plus a short "surfed today" session. No calendar. The app always shows the next session up; you do it whenever you get to the gym.

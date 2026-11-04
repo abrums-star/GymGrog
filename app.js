@@ -75,22 +75,38 @@ const tplById = id => id === 'S' ? SHORT_TEMPLATE : TEMPLATES.find(t => t.id ===
 function lastPerformance(exId) {
   for (let i = S.workouts.length - 1; i >= 0; i--) {
     const en = S.workouts[i].entries.find(x => x.exerciseId === exId && x.sets.some(s => s.done));
-    if (en) return { date: S.workouts[i].date, sets: en.sets.filter(s => s.done) };
+    if (en) return { date: S.workouts[i].date, sets: en.sets.filter(s => s.done), feel: en.feel || null };
   }
   return null;
 }
+// How the exercise felt last time: 'easy' | 'hard' (challenging, just right) | 'fail' (impossible).
+const FEELS ={ easy: 'Easy', hard: 'Challenging', fail: 'Impossible' };
+// Next-time suggestion. The rating drives it: easy → go up (two steps if you also hit the top of the
+// range), challenging → up only when every set hit the top, impossible → back down one step.
 function suggest(ex, slot) {
-  const last = lastPerformance(ex.id); if (!last) return { w: null, r: slot.reps[1], note: 'First time. Pick a weight you can do for the top of the range with 2 reps spare.' };
+  const last = lastPerformance(ex.id);
+  if (!last) return { w: null, r: slot.reps[1], note: ex.unit === 'kg' ? 'First time. Pick a weight you can do for the top of the range with 2 reps spare. Rate it afterwards so next time adjusts.'
+    : `First time. Aim for ${slot.reps[1]}${ex.unit === 'time' ? ' s' : ex.unit === 'min' ? ' min' : ' reps'}, then rate how it felt.` };
   const ws = last.sets.map(s => s.w).filter(x => x != null); const w = ws.length ? ws[ws.length - 1] : null;
+  const reps = last.sets.map(s => s.r).join('/');
   const hitTop = last.sets.every(s => (s.r ?? 0) >= slot.reps[1]);
-  if (ex.unit === 'kg' && hitTop && ex.step) {
-    const nw = Math.max(0, +(w + ex.step).toFixed(1));
-    return { w: nw, r: slot.reps[0], note: `Last time ${fmtDate(last.date)}: ${w} kg, all sets at ${slot.reps[1]}+. Go up to ${nw} kg.` };
+  const when = `Last time ${fmtDate(last.date)}`;
+  const felt = last.feel === 'easy' ? 'felt easy' : last.feel === 'fail' ? 'was too much' : hitTop ? `all sets at ${slot.reps[1]}+` : 'felt right';
+  let steps = last.feel === 'easy' ? (hitTop ? 2 : 1) : last.feel === 'fail' ? -1 : hitTop ? 1 : 0;
+  if (ex.unit === 'kg') {
+    if (w == null) return { w: null, r: slot.reps[1], note: `${when}: ${reps} reps, no weight logged. Log the kg this time to get suggestions.` };
+    if (!ex.step) steps = 0;
+    const nw = Math.max(0, +(w + steps * ex.step).toFixed(1));
+    const assisted = ex.step < 0; // assisted pull-up: the number is the assistance, so "harder" means a smaller number
+    if (steps > 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}. ${assisted ? 'Less assistance: ' : 'Go up to '}${nw} kg, aim for ${slot.reps[0]}.` };
+    if (steps < 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg ${felt}. ${assisted ? 'More assistance: ' : 'Back down to '}${nw} kg, aim for ${slot.reps[0]}.` };
+    return { w, r: slot.reps[1], note: `${when}: ${w} kg × ${reps}, ${felt}. Same weight, aim for ${slot.reps[1]}.` };
   }
-  if (ex.unit === 'kg') return { w, r: slot.reps[1], note: `Last time ${fmtDate(last.date)}: ${w} kg × ${last.sets.map(s => s.r).join('/')}. Same weight, aim for ${slot.reps[1]}.` };
-  const r = last.sets[last.sets.length - 1].r;
-  const bump = hitTop ? (ex.unit === 'time' ? 5 : ex.unit === 'min' ? 0 : 1) : 0;
-  return { w: null, r: (r ?? slot.reps[1]) + bump, note: `Last time ${fmtDate(last.date)}: ${last.sets.map(s => s.r).join('/')}${ex.unit === 'time' ? ' s' : ex.unit === 'min' ? ' min' : ' reps'}.` };
+  const r = last.sets[last.sets.length - 1].r ?? slot.reps[1];
+  const unitStep = ex.unit === 'time' ? 5 : ex.unit === 'min' ? 0 : 1;
+  const nr = Math.max(1, r + steps * unitStep);
+  const u = ex.unit === 'time' ? ' s' : ex.unit === 'min' ? ' min' : ' reps';
+  return { w: null, r: nr, note: `${when}: ${reps}${u}, ${felt}.${nr !== r ? ` Aim for ${nr}${u}.` : ''}` };
 }
 
 // ---------- session lifecycle ----------
@@ -230,16 +246,17 @@ function session() {
     const unit = ex.unit; const hasW = unit === 'kg';
     const repLabel = unit === 'time' ? 'sec' : unit === 'min' ? 'min' : 'reps';
     return `<div class="card ex ${ei === a.cur ? 'current' : ''} ${done ? 'done' : ''} ${ei === a.cur ? 'open' : ''}" data-entry="${ei}">
-      <div class="row between"><div><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel} · rest ${en.rest}s</p></div>
+      <div class="row between nowrap"><span class="grip" data-grip="${ei}" title="Hold and drag to reorder">☰</span><div class="grow"><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel} · rest ${en.rest}s</p></div>
         <div class="row nowrap"><button class="sm" data-action="swap-live" data-entry="${ei}" title="Swap for another exercise today">⇄</button><button class="sm" data-action="ban-live" data-entry="${ei}" title="Never again: drop it and replace it">✕</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
       <p class="prev">${esc(en.note)}</p>
-      <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
+      <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">☰ hold and drag to change the order (machine taken?) · ⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
       <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg' : ''}</span><span class="hdr">${repLabel}</span><span class="hdr">✓</span>
       ${en.sets.map((s, si) => `<span class="n">${si + 1}</span>
         ${hasW ? `<input type="number" step="${ex.step || 0.5}" inputmode="decimal" value="${s.w ?? ''}" data-field="w" data-entry="${ei}" data-set="${si}" placeholder="kg">` : `<span class="n">${unit === 'bw' ? 'bw' : ''}</span>`}
         <input type="number" inputmode="numeric" value="${s.r ?? ''}" data-field="r" data-entry="${ei}" data-set="${si}">
         <button class="check ${s.done ? 'on' : ''}" data-action="done" data-entry="${ei}" data-set="${si}">${s.done ? '✓' : ''}</button>`).join('')}
       </div>
+      <div class="row feel"><span class="muted small">How was it?</span>${Object.entries(FEELS).map(([k, l]) => `<button class="sm ${k} ${en.feel === k ? 'on' : ''}" data-action="feel" data-entry="${ei}" data-feel="${k}">${l}</button>`).join('')}</div>
       <div class="row" style="margin-top:8px"><button class="sm ghost" data-action="add-set" data-entry="${ei}">+ set</button><button class="sm ghost" data-action="skip-ex" data-entry="${ei}">${done ? 'undo' : 'skip exercise'}</button></div>
     </div>`; }).join('')}
   <div class="card"><label>Notes (how it felt, what to change)</label><textarea id="notes" rows="2">${esc(a.notes)}</textarea></div>
@@ -264,7 +281,7 @@ function history() {
     const vol = w.entries.reduce((t, e) => t + e.sets.filter(s => s.done && s.w).reduce((x, s) => x + s.w * (s.r || 0), 0), 0);
     return `<details class="card"><summary><b>${esc(w.templateName)}</b> · ${fmtDate(w.date)} · ${mins} min${vol ? ` · ${Math.round(vol)} kg lifted` : ''}</summary>
       <table>${w.entries.map(e => { const ex = exById(e.exerciseId); const ds = e.sets.filter(s => s.done);
-        return `<tr><td>${esc(ex?.name || e.exerciseId)}</td><td>${ds.length ? ds.map(s => (s.w != null ? s.w + '×' : '') + (s.r ?? '')).join(', ') : '<span class="muted">skipped</span>'}</td></tr>`; }).join('')}</table>
+        return `<tr><td>${esc(ex?.name || e.exerciseId)}</td><td>${ds.length ? ds.map(s => (s.w != null ? s.w + '×' : '') + (s.r ?? '')).join(', ') : '<span class="muted">skipped</span>'}${e.feel ? ` <span class="pill ${e.feel}">${FEELS[e.feel]}</span>` : ''}</td></tr>`; }).join('')}</table>
       ${w.notes ? `<p class="small">${esc(w.notes)}</p>` : ''}
       <button class="sm danger" data-action="del-workout" data-id="${w.id}">Delete</button></details>`; }).join('')}</div>`;
 }
@@ -344,6 +361,7 @@ document.addEventListener('click', e => {
     case 'add-set': { const en = S.active.entries[+d.entry]; const l = en.sets[en.sets.length - 1]; en.sets.push({ w: l?.w ?? null, r: l?.r ?? null, done: false }); save(); render(); break; }
     case 'skip-ex': { const en = S.active.entries[+d.entry]; const all = en.sets.every(s => s.done); en.sets.forEach(s => s.done = !all); if (!all) S.active.cur = Math.min(S.active.entries.length - 1, +d.entry + 1); save(); render(); break; }
     case 'cues': b.closest('.ex').classList.toggle('open'); break;
+    case 'feel': { const en = S.active.entries[+d.entry]; en.feel = en.feel === d.feel ? null : d.feel; save(); render(); break; }
     case 'swap-live': replaceLive(+d.entry, false); break;
     case 'ban-live': replaceLive(+d.entry, true); break;
     case 'ban': { const t = tplById(d.tpl); const ex = pickExercise(t, +d.slot); if (!ex) break;
@@ -379,6 +397,50 @@ document.addEventListener('input', e => {
   const st = S.active.entries[+t.dataset.entry].sets[+t.dataset.set];
   st[t.dataset.field] = t.value === '' ? null : parseFloat(t.value); save();
 });
+// ---------- reorder exercises mid-session (machine taken? drag it lower) ----------
+// Pointer events so it works with a finger on iPhone and with a mouse. While dragging, every card
+// collapses to its title so the whole session fits on one screen and no auto-scroll is needed.
+function moveEntry(from, to) {
+  const a = S.active; if (!a || from === to) return;
+  const [en] = a.entries.splice(from, 1); a.entries.splice(to, 0, en);
+  const first = a.entries.findIndex(e => e.sets.some(s => !s.done)); a.cur = first < 0 ? a.entries.length - 1 : first;
+  save(); render();
+}
+let drag = null;
+function dropIndex(y) {
+  const others = [...view.querySelectorAll('.ex')].filter(c => c !== drag.card);
+  const k = others.findIndex(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  return k < 0 ? others.length : k;
+}
+view.addEventListener('pointerdown', e => {
+  const g = e.target.closest('.grip'); if (!g || !S.active) return;
+  e.preventDefault(); const card = g.closest('.ex');
+  document.body.classList.add('reordering'); card.classList.add('dragging');
+  drag = { card, from: +card.dataset.entry, y0: e.clientY, id: e.pointerId };
+  try { g.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  markDrop(e.clientY);
+});
+function markDrop(y) {
+  const cards = [...view.querySelectorAll('.ex')]; cards.forEach(c => c.classList.remove('drop-before', 'drop-after'));
+  const others = cards.filter(c => c !== drag.card); const k = dropIndex(y);
+  if (!others.length) return;
+  if (k < others.length) others[k].classList.add('drop-before'); else others[others.length - 1].classList.add('drop-after');
+}
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return; e.preventDefault();
+  drag.card.style.transform = `translateY(${e.clientY - drag.y0}px)`; markDrop(e.clientY);
+});
+function endDrag(e, apply) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const to = apply ? dropIndex(e.clientY) : drag.from;
+  document.body.classList.remove('reordering'); drag.card.classList.remove('dragging'); drag.card.style.transform = '';
+  view.querySelectorAll('.ex').forEach(c => c.classList.remove('drop-before', 'drop-after'));
+  const from = drag.from; drag = null;
+  if (apply) moveEntry(from, to);
+}
+document.addEventListener('pointerup', e => endDrag(e, true));
+document.addEventListener('pointercancel', e => endDrag(e, false));
+
 document.getElementById('lightbox').addEventListener('click', e => e.currentTarget.classList.add('hidden'));
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'wq') document.querySelector('[data-action=log-weight]')?.click(); });
 setInterval(() => { if (current === 'session' && S.active && document.activeElement?.tagName !== 'INPUT') { /* keep elapsed fresh without stealing focus */ const h = view.querySelector('h1 + .muted'); if (h) h.textContent = `${Math.floor((Date.now() - S.active.startedAt) / 60000)} min`; } }, 30000);

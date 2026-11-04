@@ -106,3 +106,22 @@ svg.chart { width: 100%; height: 160px; background: var(--card2); border-radius:
   border-radius: 10px; z-index: 10; opacity: 0; transform: translateY(8px); transition: .2s; pointer-events: none; font-size: .9rem; }
 .toast.show { opacity: 1; transform: none; }
 .timer .t small { display: block; font-size: .75rem; font-weight: 400; opacity: .85; }
+
+/* Reorder (drag the ☰ handle) and "how was it?" rating */
+.grip { flex: none; width: 36px; height: 44px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 1.3rem;
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; border-radius: 8px; margin-left: -6px; }
+.grip:active { cursor: grabbing; }
+body.reordering .ex .prev, body.reordering .ex .cues, body.reordering .ex .sets, body.reordering .ex .row.feel, body.reordering .ex .row[style], body.reordering .ex .row.nowrap .row { display: none; }
+body.reordering .ex { padding: 8px 14px; margin-bottom: 8px; transition: none; }
+body.reordering .ex p.small { display: none; }
+body.reordering { user-select: none; -webkit-user-select: none; }
+.ex.dragging { background: var(--card2); z-index: 3; position: relative; box-shadow: 0 8px 24px rgba(0,0,0,.5); border: 1px solid var(--accent); }
+.ex.drop-before { box-shadow: 0 -5px 0 -2px var(--accent); }
+.ex.drop-after { box-shadow: 0 5px 0 -2px var(--accent); }
+.row.feel { margin-top: 10px; gap: 6px; }
+.row.feel button.on.easy { background: #14532d; color: var(--good); outline: 2px solid var(--good); }
+.row.feel button.on.hard { background: #713f12; color: var(--warn); outline: 2px solid var(--warn); }
+.row.feel button.on.fail { background: #7f1d1d; color: var(--bad); outline: 2px solid var(--bad); }
+.pill.easy { background: #14532d; color: var(--good); }
+.pill.hard { background: #713f12; color: var(--warn); }
+.pill.fail { background: #7f1d1d; color: var(--bad); }

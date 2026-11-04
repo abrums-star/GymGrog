@@ -68,7 +68,9 @@ function replaceLive(ei, ban) {
   if (timer.iv && timer.label.includes(old.name)) timer.label = timer.label.replace(old.name, ex.name);
   save(); render();
 }
-function nextTemplate() { return TEMPLATES[S.nextIdx % TEMPLATES.length]; }
+function rotation() { const r = (S.settings.rotation || []).map(id => TEMPLATES.find(t => t.id === id)).filter(Boolean); return r.length ? r : TEMPLATES.slice(0, 3); }
+function nextTemplate() { const r = rotation(); return r[S.nextIdx % r.length]; }
+const tplById = id => id === 'S' ? SHORT_TEMPLATE : TEMPLATES.find(t => t.id === id);
 
 function lastPerformance(exId) {
   for (let i = S.workouts.length - 1; i >= 0; i--) {
@@ -106,7 +108,7 @@ function finishSession() {
   const a = S.active; if (!a) return;
   a.finishedAt = Date.now(); delete a.cur;
   S.workouts.push(a); S.active = null;
-  if (TEMPLATES.some(t => t.id === a.templateId)) S.nextIdx = (S.nextIdx + 1) % TEMPLATES.length;
+  const r = rotation(); if (r.some(t => t.id === a.templateId)) S.nextIdx = (r.findIndex(t => t.id === a.templateId) + 1) % r.length;
   stopTimer(); releaseWakeLock(); save(); go('home');
 }
 function discardSession() { if (!confirm('Discard this session? Nothing will be saved.')) return; S.active = null; stopTimer(); releaseWakeLock(); save(); go('home'); }
@@ -179,7 +181,7 @@ let current = 'home';
 function go(v) { current = v; render(); window.scrollTo(0, 0); }
 function render() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === current));
-  const fn = { home, session, history, weight, program, settings }[current] || home;
+  const fn = { home, session, history, weight, program, settings, pick }[current] || home;
   view.innerHTML = fn();
 }
 
@@ -196,7 +198,7 @@ function home() {
   <div class="card accent"><div class="row between"><h3>Next up: ${esc(tpl.name)}</h3><span class="pill">Block ${blockNumber() + 1}</span></div>
     <p class="muted">${esc(tpl.tagline)}</p><p class="small">${preview}</p>
     <button class="primary big" data-action="start" data-tpl="${tpl.id}">Start session</button>
-    <div class="row" style="margin-top:8px"><button class="grow" data-action="start" data-tpl="S">Short session (20 min)</button><button class="grow" data-action="pick-other">Other session</button></div>
+    <div class="row" style="margin-top:8px"><button class="grow" data-action="start" data-tpl="S">Short session (20 min)</button><button class="grow" data-action="go" data-view="pick">Other session</button></div>
   </div>
   <div class="card"><div class="row between"><h3>Last 14 days</h3><span class="ring ${cls}">${n}</span></div>
     <p class="muted">Minimum ${S.settings.targetPer14}, goal ${S.settings.goalPer14}. ${n >= S.settings.goalPer14 ? 'On target.' : n >= S.settings.targetPer14 ? `${S.settings.goalPer14 - n} more to hit the goal.` : `${S.settings.targetPer14 - n} more to hit the minimum.`}</p>
@@ -245,6 +247,16 @@ function session() {
   <button class="ghost big" data-action="discard">Discard</button>`;
 }
 
+function pick() {
+  const all = [...TEMPLATES, SHORT_TEMPLATE]; const rot = rotation().map(t => t.id); const nx = nextTemplate().id;
+  return `<h1>Pick a session</h1><p class="muted">Any of these, any day. Sessions in the rotation advance the queue; the others do not.</p>
+  ${all.map(t => { const preview = t.slots.map((sl, i) => pickExercise(t, i)).filter(Boolean).map(e => esc(e.name)).join(' · ');
+    const mins = t.id === 'S' ? 20 : Math.round(t.slots.reduce((m, sl) => m + sl.sets * (sl.rest + 40) / 60, 0) + 10);
+    return `<div class="card ${t.id === nx ? 'accent' : ''}"><div class="row between"><h3>${esc(t.name)}</h3><span class="pill ${rot.includes(t.id) ? 'like' : ''}">${t.id === nx ? 'next up' : rot.includes(t.id) ? 'in rotation' : 'one-off'}</span></div>
+      <p class="muted small">${esc(t.tagline)} · about ${mins} min</p><p class="small">${preview}</p>
+      <button class="primary" data-action="start" data-tpl="${t.id}">Start ${t.id}</button></div>`; }).join('')}`;
+}
+
 function history() {
   if (!S.workouts.length) return `<h1>History</h1><p class="muted">No sessions yet. The first one is the hardest.</p>`;
   return `<h1>History</h1><p class="muted">${S.workouts.length} sessions · ${S.surfDays.length} surf days logged</p><div class="hist">
@@ -281,7 +293,7 @@ function chart(ws) {
 function program() {
   const all = [...TEMPLATES, SHORT_TEMPLATE];
   return `<h1>Program</h1><p class="muted">Block ${blockNumber() + 1} · exercises rotate in ${daysToNextBlock()} days. Patterns stay fixed, the exercise inside each one changes every ${S.settings.blockDays} days from the pool you rate "like" or "ok". Tap ⇄ to swap one for this block, ✕ to drop an exercise for good.</p>
-  ${all.map(t => `<div class="card"><h3>${esc(t.name)}</h3><p class="muted small">${esc(t.tagline)}</p>
+  ${all.map(t => `<div class="card"><div class="row between"><h3>${esc(t.name)}</h3>${rotation().some(x => x.id === t.id) ? '<span class="pill like">in rotation</span>' : t.id === 'S' ? '' : '<span class="pill">one-off</span>'}</div><p class="muted small">${esc(t.tagline)}</p>
     ${t.slots.map((s, i) => { const ex = pickExercise(t, i); const pool = poolFor(s.pattern);
       return `<div class="row between nowrap" style="padding:6px 0;border-bottom:1px solid #334155"><div><div>${ex ? esc(ex.name) : '<span class="muted">no exercise available</span>'}</div><div class="muted small">${esc(PATTERNS[s.pattern].name)} · ${s.sets}×${s.reps[0]}${s.reps[1] !== s.reps[0] ? '–' + s.reps[1] : ''}</div></div>
         <div class="row nowrap"><button class="sm" data-action="swap" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''}>⇄</button><button class="sm" data-action="ban" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''} title="Never again">✕</button></div></div>`; }).join('')}
@@ -304,8 +316,10 @@ function settings() {
     <label><input type="checkbox" id="s-notify" ${s.notify ? 'checked' : ''} style="width:auto"> Silent notification when rest is over (shows even if you are in another app) ${notifyState()}</label>
     <label><input type="checkbox" id="s-vibrate" ${s.vibrate ? 'checked' : ''} style="width:auto"> Vibrate when rest is over</label>
     <button class="primary" data-action="save-settings" style="margin-top:10px">Save</button></div>
-  <div class="card"><h3>Next session</h3><p class="muted small">Queue position. Change if you want to force a different one next.</p>
-    <div class="row">${TEMPLATES.map((t, i) => `<button class="${i === S.nextIdx ? 'active' : ''}" data-action="set-next" data-idx="${i}">${t.id}</button>`).join('')}</div></div>
+  <div class="card"><h3>Rotation</h3><p class="muted small">Sessions that cycle as "next up", in this order. Untick one to keep it as a one-off in "Other session".</p>
+    ${TEMPLATES.map(t => `<label class="row" style="margin:4px 0"><input type="checkbox" data-action="rot" data-id="${t.id}" ${rotation().some(x => x.id === t.id) ? 'checked' : ''} style="width:auto"> ${esc(t.name)} <span class="muted small">${esc(t.tagline)}</span></label>`).join('')}
+    <h3 style="margin-top:12px">Next session</h3><p class="muted small">Queue position. Tap to force a different one next.</p>
+    <div class="row">${rotation().map((t, i) => `<button class="${i === S.nextIdx % rotation().length ? 'active' : ''}" data-action="set-next" data-idx="${i}">${t.id}</button>`).join('')}</div></div>
   <div class="card"><h3>Data</h3><p class="muted small">Everything is stored in this browser only. Export regularly, or before changing phone.</p>
     <div class="row"><button data-action="export">Export JSON</button><button data-action="import">Import JSON</button><input type="file" id="imp" accept="application/json" hidden></div>
     <button class="danger sm" data-action="reset" style="margin-top:12px">Reset everything</button></div>
@@ -317,11 +331,9 @@ document.getElementById('nav').addEventListener('click', e => { const b = e.targ
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-action]'); if (!b) return;
   const a = b.dataset.action, d = b.dataset;
-  const tplById = id => id === 'S' ? SHORT_TEMPLATE : TEMPLATES.find(t => t.id === id);
   switch (a) {
     case 'go': go(d.view); break;
     case 'start': startSession(tplById(d.tpl)); break;
-    case 'pick-other': { const id = prompt('Which session? A, B, C or S'); const t = id && tplById(id.trim().toUpperCase()); if (t) startSession(t); break; }
     case 'toggle-surf': { const t = today(); S.surfDays = S.surfDays.includes(t) ? S.surfDays.filter(x => x !== t) : [...S.surfDays, t]; save(); render(); break; }
     case 'log-weight': { const kg = parseFloat(document.getElementById('wq').value); const date = document.getElementById('wd')?.value || today();
       if (!kg) return; S.weights = S.weights.filter(w => w.date !== date); S.weights.push({ date, kg }); S.weights.sort((x, y) => x.date < y.date ? -1 : 1); save(); render(); break; }
@@ -358,6 +370,8 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.action === 'status') { S.exerciseStatus[t.dataset.id] = t.value; save(); render(); }
+  if (t.dataset.action === 'rot') { const ids = TEMPLATES.map(x => x.id).filter(id => id === t.dataset.id ? t.checked : rotation().some(r => r.id === id));
+    if (!ids.length) { t.checked = true; toast('Keep at least one session in the rotation.'); return; } S.settings.rotation = ids; S.nextIdx = 0; save(); render(); }
   if (t.id === 'imp' && t.files[0]) { const r = new FileReader(); r.onload = () => { try { const s = JSON.parse(r.result); if (!s.workouts) throw 0; S = { ...blank(), ...s }; save(); render(); alert('Imported'); } catch { alert('Not a GymGrog export'); } }; r.readAsText(t.files[0]); }
 });
 document.addEventListener('input', e => {

@@ -153,6 +153,60 @@ export const TEMPLATES = [
       { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 2 },
     ],
   },
+  // Extra sessions. Not in the default rotation (A, B, C); pick them from "Other session"
+  // or add them to the rotation in Settings.
+  {
+    id: 'F', name: 'F: Full body', tagline: 'Everything once. The classic.',
+    slots: [
+      { pattern: 'squat',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'push',     sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 1 },
+      { pattern: 'vpull',    sets: 2, reps: [10, 12], rest: 90, offset: 1 },
+      { pattern: 'shoulder', sets: 2, reps: [12, 15], rest: 60, offset: 1 },
+      { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
+      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 1 },
+    ],
+  },
+  {
+    id: 'L', name: 'L: Legs only', tagline: 'Quads, glutes, hamstrings, calves. Walk out slowly.',
+    slots: [
+      { pattern: 'squat',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 90, offset: 1 },
+      { pattern: 'legiso',   sets: 3, reps: [12, 15], rest: 60, offset: 0 },
+      { pattern: 'legiso',   sets: 3, reps: [12, 15], rest: 60, offset: 1 },
+      { pattern: 'calf',     sets: 3, reps: [15, 20], rest: 45, offset: 0 },
+      { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
+      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 1 },
+    ],
+  },
+  {
+    id: 'U', name: 'U: Upper body', tagline: 'Back, chest, shoulders. Legs get the day off.',
+    slots: [
+      { pattern: 'vpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'push',     sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'shoulder', sets: 3, reps: [12, 15], rest: 60, offset: 0 },
+      { pattern: 'hpull',    sets: 2, reps: [12, 15], rest: 60, offset: 1 },
+      { pattern: 'reardelt', sets: 3, reps: [15, 20], rest: 60, offset: 0 },
+      { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 1 },
+      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 0 },
+    ],
+  },
+  {
+    id: 'D', name: 'D: Back & core', tagline: 'All the paddle muscles, nothing else.',
+    slots: [
+      { pattern: 'vpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 1 },
+      { pattern: 'reardelt', sets: 3, reps: [15, 20], rest: 60, offset: 0 },
+      { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
+      { pattern: 'core',     sets: 2, reps: [30, 45], rest: 45, offset: 1 },
+      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 0 },
+    ],
+  },
 ];
 
 // Short session for a day you surfed but still want to tick the box.
@@ -168,6 +222,7 @@ export const SHORT_TEMPLATE = {
 
 export const DEFAULT_SETTINGS = {
   programStart: null,      // ISO date, set on first run
+  rotation: ['A', 'B', 'C'], // which sessions cycle as "next up"; others are picked by hand
   blockDays: 28,           // exercise rotation period
   targetPer14: 4,          // minimum sessions per rolling 14 days (2/week)
   goalPer14: 6,            // goal (3/week)

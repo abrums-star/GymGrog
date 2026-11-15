@@ -79,6 +79,15 @@ function lastPerformance(exId) {
   }
   return null;
 }
+// Weight increment for an exercise. Machines differ (a stack can move in 7 kg plates), so once two
+// different weights have been logged, the smallest gap between logged weights replaces the default step.
+function stepFor(ex) {
+  if (ex.unit !== 'kg' || !ex.step) return ex.step;
+  const ws = [...new Set(S.workouts.flatMap(w => w.entries.filter(e => e.exerciseId === ex.id).flatMap(e => e.sets.filter(s => s.done && s.w != null).map(s => +s.w))))].sort((a, b) => a - b);
+  let d = Infinity; for (let i = 1; i < ws.length; i++) d = Math.min(d, +(ws[i] - ws[i - 1]).toFixed(2));
+  if (!(d >= 0.5 && d <= 25)) return ex.step;
+  return ex.step < 0 ? -d : d;
+}
 // How the exercise felt last time: 'easy' | 'hard' (challenging, just right) | 'fail' (impossible).
 const FEELS ={ easy: 'Easy', hard: 'Challenging', fail: 'Impossible' };
 // Next-time suggestion. The rating drives it: easy → go up (two steps if you also hit the top of the
@@ -95,11 +104,12 @@ function suggest(ex, slot) {
   let steps = last.feel === 'easy' ? (hitTop ? 2 : 1) : last.feel === 'fail' ? -1 : hitTop ? 1 : 0;
   if (ex.unit === 'kg') {
     if (w == null) return { w: null, r: slot.reps[1], note: `${when}: ${reps} reps, no weight logged. Log the kg this time to get suggestions.` };
-    if (!ex.step) steps = 0;
-    const nw = Math.max(0, +(w + steps * ex.step).toFixed(1));
-    const assisted = ex.step < 0; // assisted pull-up: the number is the assistance, so "harder" means a smaller number
-    if (steps > 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}. ${assisted ? 'Less assistance: ' : 'Go up to '}${nw} kg, aim for ${slot.reps[0]}.` };
-    if (steps < 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg ${felt}. ${assisted ? 'More assistance: ' : 'Back down to '}${nw} kg, aim for ${slot.reps[0]}.` };
+    const step = stepFor(ex); if (!step) steps = 0;
+    const nw = Math.max(0, +(w + steps * step).toFixed(1));
+    const assisted = step < 0; // assisted pull-up: the number is the assistance, so "harder" means a smaller number
+    const plates = step !== ex.step ? ` (${Math.abs(step)} kg steps on this machine)` : '';
+    if (steps > 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}. ${assisted ? 'Less assistance: ' : 'Go up to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
+    if (steps < 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg ${felt}. ${assisted ? 'More assistance: ' : 'Back down to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
     return { w, r: slot.reps[1], note: `${when}: ${w} kg × ${reps}, ${felt}. Same weight, aim for ${slot.reps[1]}.` };
   }
   const r = last.sets[last.sets.length - 1].r ?? slot.reps[1];
@@ -252,7 +262,7 @@ function session() {
       <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">☰ hold and drag to change the order (machine taken?) · ⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
       <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg' : ''}</span><span class="hdr">${repLabel}</span><span class="hdr">✓</span>
       ${en.sets.map((s, si) => `<span class="n">${si + 1}</span>
-        ${hasW ? `<input type="number" step="${ex.step || 0.5}" inputmode="decimal" value="${s.w ?? ''}" data-field="w" data-entry="${ei}" data-set="${si}" placeholder="kg">` : `<span class="n">${unit === 'bw' ? 'bw' : ''}</span>`}
+        ${hasW ? `<input type="number" step="${Math.abs(stepFor(ex)) || 0.5}" inputmode="decimal" value="${s.w ?? ''}" data-field="w" data-entry="${ei}" data-set="${si}" placeholder="kg">` : `<span class="n">${unit === 'bw' ? 'bw' : ''}</span>`}
         <input type="number" inputmode="numeric" value="${s.r ?? ''}" data-field="r" data-entry="${ei}" data-set="${si}">
         <button class="check ${s.done ? 'on' : ''}" data-action="done" data-entry="${ei}" data-set="${si}">${s.done ? '✓' : ''}</button>`).join('')}
       </div>

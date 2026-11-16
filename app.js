@@ -46,10 +46,11 @@ function pickExercise(tpl, slotIdx, block = blockNumber()) {
 }
 function swapExercise(tpl, slotIdx) {
   const cur = pickExercise(tpl, slotIdx); const pool = poolFor(tpl.slots[slotIdx].pattern);
-  if (pool.length < 2) return;
+  if (pool.length < 2) { noAlternative(cur, tpl.slots[slotIdx].pattern); return; }
   const i = pool.findIndex(e => e.id === cur?.id);
   S.overrides[`${blockNumber()}:${tpl.id}:${slotIdx}`] = pool[(i + 1) % pool.length].id; save();
 }
+function noAlternative(ex, pattern) { toast(`${ex ? ex.name : 'This'} is the only "${PATTERNS[pattern].name}" exercise in your program. Rate another one "ok" in Program › Exercise library.`); }
 // Drop an exercise for good (status "never"). Refuses if it is the last one for its pattern.
 function banExercise(ex, pattern) {
   const rest = poolFor(pattern).filter(x => x.id !== ex.id);
@@ -60,7 +61,7 @@ function banExercise(ex, pattern) {
 function replaceLive(ei, ban) {
   const a = S.active; const en = a.entries[ei]; const old = exById(en.exerciseId);
   if (ban) { if (!banExercise(old, en.pattern)) return; }
-  const pool = poolFor(en.pattern); if (!ban && pool.length < 2) return;
+  const pool = poolFor(en.pattern); if (!ban && pool.length < 2) { noAlternative(old, en.pattern); return; }
   const i = pool.findIndex(x => x.id === en.exerciseId); const ex = pool[(i + 1) % pool.length];
   const sg = suggest(ex, { reps: en.reps });
   en.exerciseId = ex.id; en.note = sg.note; en.sets.forEach(s => { if (!s.done) { s.w = sg.w; s.r = sg.r; } });
@@ -417,36 +418,45 @@ function moveEntry(from, to) {
   save(); render();
 }
 let drag = null;
-function dropIndex(y) {
+// The drop position comes from where the dragged card itself is, not from the finger: collapsing the
+// cards on pointerdown shifts the layout, so the finger's y means nothing until the card has been moved.
+function dropIndex() {
+  const r = drag.card.getBoundingClientRect(); const y = r.top + r.height / 2;
   const others = [...view.querySelectorAll('.ex')].filter(c => c !== drag.card);
-  const k = others.findIndex(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  const k = others.findIndex(c => { const b = c.getBoundingClientRect(); return y < b.top + b.height / 2; });
   return k < 0 ? others.length : k;
 }
 view.addEventListener('pointerdown', e => {
-  const g = e.target.closest('.grip'); if (!g || !S.active) return;
+  const g = e.target.closest('.grip'); if (!g || !S.active || drag || e.button !== 0) return;
   e.preventDefault(); const card = g.closest('.ex');
   document.body.classList.add('reordering'); card.classList.add('dragging');
-  drag = { card, from: +card.dataset.entry, y0: e.clientY, id: e.pointerId };
+  // Collapsing moved the card away from the finger: scroll it back, then nudge it the rest of the way.
+  let r = card.getBoundingClientRect(); window.scrollBy(0, r.top + r.height / 2 - e.clientY);
+  r = card.getBoundingClientRect(); const off = e.clientY - (r.top + r.height / 2);
+  drag = { card, from: +card.dataset.entry, y0: e.clientY, off, id: e.pointerId, moved: false };
+  card.style.transform = `translateY(${off}px)`;
   try { g.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-  markDrop(e.clientY);
+  markDrop();
 });
-function markDrop(y) {
+function markDrop() {
   const cards = [...view.querySelectorAll('.ex')]; cards.forEach(c => c.classList.remove('drop-before', 'drop-after'));
-  const others = cards.filter(c => c !== drag.card); const k = dropIndex(y);
+  const others = cards.filter(c => c !== drag.card); const k = dropIndex();
   if (!others.length) return;
   if (k < others.length) others[k].classList.add('drop-before'); else others[others.length - 1].classList.add('drop-after');
 }
 document.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return; e.preventDefault();
-  drag.card.style.transform = `translateY(${e.clientY - drag.y0}px)`; markDrop(e.clientY);
+  const dy = e.clientY - drag.y0; if (Math.abs(dy) > 8) drag.moved = true;
+  drag.card.style.transform = `translateY(${drag.off + dy}px)`; markDrop();
 });
+// A tap on the handle (no real movement) changes nothing; only a drag that ended somewhere else reorders.
 function endDrag(e, apply) {
   if (!drag || e.pointerId !== drag.id) return;
-  const to = apply ? dropIndex(e.clientY) : drag.from;
+  const to = apply && drag.moved ? dropIndex() : drag.from;
   document.body.classList.remove('reordering'); drag.card.classList.remove('dragging'); drag.card.style.transform = '';
   view.querySelectorAll('.ex').forEach(c => c.classList.remove('drop-before', 'drop-after'));
   const from = drag.from; drag = null;
-  if (apply) moveEntry(from, to);
+  if (to !== from) moveEntry(from, to);
 }
 document.addEventListener('pointerup', e => endDrag(e, true));
 document.addEventListener('pointercancel', e => endDrag(e, false));

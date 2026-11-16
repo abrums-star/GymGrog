@@ -68,6 +68,12 @@ export const EXERCISES = [
   // Calves
   { id: 'calf-raise', name: 'Calf raise', pattern: 'calf', equipment: 'Calf machine or leg press', step: 5, unit: 'kg', status: 'ok',
     cues: 'Full stretch at the bottom, pause, full rise onto the toes, pause. Slow.' },
+  { id: 'seated-calf-raise', name: 'Seated calf raise', pattern: 'calf', equipment: 'Seated calf machine', step: 5, unit: 'kg', status: 'ok',
+    cues: 'Pad on the knees, let the heels drop as low as they go, pause, rise onto the toes and hold a second. Slow.' },
+  { id: 'leg-press-calf', name: 'Calf press on leg press', pattern: 'calf', equipment: 'Leg press machine', step: 5, unit: 'kg', status: 'ok',
+    cues: 'Legs straight, knees soft, only the balls of the feet on the plate. Push through the toes, let the heels drop slowly.' },
+  { id: 'db-calf-raise', name: 'Standing dumbbell calf raise', pattern: 'calf', equipment: 'One dumbbell, a step or plate under the toes', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Hold one dumbbell, other hand on something for balance. Full stretch at the bottom, full rise, pause at both ends. Weight is the one dumbbell.' },
 
   // Push
   { id: 'chest-press-machine', name: 'Chest press machine', pattern: 'push', equipment: 'Chest press machine', step: 2.5, unit: 'kg', status: 'ok',

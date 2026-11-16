@@ -25,6 +25,8 @@ button.big { width: 100%; padding: 16px; font-size: 1.1rem; }
 button.ghost { background: transparent; color: var(--muted); }
 button.danger { background: #7f1d1d; }
 button.sm { padding: 6px 10px; font-size: .85rem; }
+/* Nothing to do here (e.g. only one exercise for the pattern): dimmed and crossed out, the tap explains why. */
+button.off { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
 button.active { outline: 2px solid var(--accent); }
 input, select, textarea { font: inherit; background: var(--bg); color: var(--text); border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; width: 100%; }
 input[type=number] { width: 72px; text-align: center; padding: 10px 4px; font-size: 1.1rem; }

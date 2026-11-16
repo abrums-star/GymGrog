@@ -256,9 +256,10 @@ function session() {
     const ex = exById(en.exerciseId); const done = en.sets.every(s => s.done);
     const unit = ex.unit; const hasW = unit === 'kg';
     const repLabel = unit === 'time' ? 'sec' : unit === 'min' ? 'min' : 'reps';
+    const alone = poolFor(en.pattern).length < 2; // nothing to swap to: show it before the tap
     return `<div class="card ex ${ei === a.cur ? 'current' : ''} ${done ? 'done' : ''} ${ei === a.cur ? 'open' : ''}" data-entry="${ei}">
       <div class="row between nowrap"><span class="grip" data-grip="${ei}" title="Hold and drag to reorder">☰</span><div class="grow"><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel} · rest ${en.rest}s</p></div>
-        <div class="row nowrap"><button class="sm" data-action="swap-live" data-entry="${ei}" title="Swap for another exercise today">⇄</button><button class="sm" data-action="ban-live" data-entry="${ei}" title="Never again: drop it and replace it">✕</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
+        <div class="row nowrap"><button class="sm ${alone ? 'off' : ''}" data-action="swap-live" data-entry="${ei}" title="${alone ? 'No other exercise for this pattern' : 'Swap for another exercise today'}">⇄</button><button class="sm" data-action="ban-live" data-entry="${ei}" title="Never again: drop it and replace it">✕</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
       <p class="prev">${esc(en.note)}</p>
       <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">☰ hold and drag to change the order (machine taken?) · ⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
       <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg' : ''}</span><span class="hdr">${repLabel}</span><span class="hdr">✓</span>
@@ -324,7 +325,7 @@ function program() {
   ${all.map(t => `<div class="card"><div class="row between"><h3>${esc(t.name)}</h3>${rotation().some(x => x.id === t.id) ? '<span class="pill like">in rotation</span>' : t.id === 'S' ? '' : '<span class="pill">one-off</span>'}</div><p class="muted small">${esc(t.tagline)}</p>
     ${t.slots.map((s, i) => { const ex = pickExercise(t, i); const pool = poolFor(s.pattern);
       return `<div class="row between nowrap" style="padding:6px 0;border-bottom:1px solid #334155"><div><div>${ex ? esc(ex.name) : '<span class="muted">no exercise available</span>'}</div><div class="muted small">${esc(PATTERNS[s.pattern].name)} · ${s.sets}×${s.reps[0]}${s.reps[1] !== s.reps[0] ? '–' + s.reps[1] : ''}</div></div>
-        <div class="row nowrap"><button class="sm" data-action="swap" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''}>⇄</button><button class="sm" data-action="ban" data-tpl="${t.id}" data-slot="${i}" ${pool.length < 2 ? 'disabled' : ''} title="Never again">✕</button></div></div>`; }).join('')}
+        <div class="row nowrap"><button class="sm ${pool.length < 2 ? 'off' : ''}" data-action="swap" data-tpl="${t.id}" data-slot="${i}" title="${pool.length < 2 ? 'No other exercise for this pattern' : 'Swap for this block'}">⇄</button><button class="sm ${pool.length < 2 ? 'off' : ''}" data-action="ban" data-tpl="${t.id}" data-slot="${i}" title="Never again">✕</button></div></div>`; }).join('')}
   </div>`).join('')}
   <h2>Exercise library</h2><p class="muted small">Like = picked first. Ok = in rotation. Never = out. Unknown = parked until you try it. Tap a photo to see the machine and the movement.</p>
   <div class="card lib">${Object.keys(PATTERNS).map(p => `<h3 style="margin-top:10px">${esc(PATTERNS[p].name)} <span class="muted small">${esc(PATTERNS[p].muscles)}</span></h3>

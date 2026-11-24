@@ -1,0 +1,18 @@
+name = "gymgrog-push"
+main = "worker.js"
+compatibility_date = "2025-11-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+ALLOWED_ORIGINS = "https://abrums-star.github.io"
+VAPID_SUBJECT = "https://abrums-star.github.io/GymGrog/"
+VAPID_PUBLIC_KEY = "BOFJTZXvboSVGDGWdPftqKAHDkIftavgcLv5hQUNTri4Z4pe-4sVZ9uqnMPlNNTNO_Jhh9evFvcXJMZWl8s7K_w"
+# Secret (not in this file): wrangler secret put VAPID_PRIVATE_JWK
+
+[durable_objects]
+bindings = [{ name = "REST", class_name = "RestAlarm" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RestAlarm"]

@@ -1,4 +1,4 @@
-const CACHE = 'gymgrog-v8';
+const CACHE = 'gymgrog-v9';
 const FILES = ['./', './index.html', './styles.css', './app.js', './data.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 const IMAGES = ['./img/assisted-pullup-0.jpg','./img/assisted-pullup-1.jpg','./img/back-extension-0.jpg','./img/back-extension-1.jpg','./img/bike-0.jpg','./img/bike-1.jpg','./img/cable-fly-0.jpg','./img/cable-fly-1.jpg','./img/cable-pullthrough-0.jpg','./img/cable-pullthrough-1.jpg','./img/calf-raise-0.jpg','./img/calf-raise-1.jpg','./img/seated-calf-raise-0.jpg','./img/seated-calf-raise-1.jpg','./img/leg-press-calf-0.jpg','./img/leg-press-calf-1.jpg','./img/db-calf-raise-0.jpg','./img/db-calf-raise-1.jpg','./img/chest-press-machine-0.jpg','./img/chest-press-machine-1.jpg','./img/chest-supported-row-0.jpg','./img/chest-supported-row-1.jpg','./img/cross-trainer-0.jpg','./img/cross-trainer-1.jpg','./img/db-bench-0.jpg','./img/db-bench-1.jpg','./img/db-rdl-0.jpg','./img/db-rdl-1.jpg','./img/db-row-0.jpg','./img/db-row-1.jpg','./img/face-pull-0.jpg','./img/face-pull-1.jpg','./img/goblet-squat-0.jpg','./img/goblet-squat-1.jpg','./img/hack-squat-0.jpg','./img/hack-squat-1.jpg','./img/incline-walk-0.jpg','./img/incline-walk-1.jpg','./img/kb-swing-0.jpg','./img/kb-swing-1.jpg','./img/lat-pulldown-neutral-0.jpg','./img/lat-pulldown-neutral-1.jpg','./img/lat-pulldown-wide-0.jpg','./img/lat-pulldown-wide-1.jpg','./img/lateral-raise-0.jpg','./img/lateral-raise-1.jpg','./img/leg-curl-0.jpg','./img/leg-curl-1.jpg','./img/leg-extension-0.jpg','./img/leg-extension-1.jpg','./img/leg-press-0.jpg','./img/leg-press-1.jpg','./img/plank-0.jpg','./img/plank-1.jpg','./img/pushup-0.jpg','./img/pushup-1.jpg','./img/reverse-pec-deck-0.jpg','./img/reverse-pec-deck-1.jpg','./img/rower-0.jpg','./img/rower-1.jpg','./img/seated-cable-row-0.jpg','./img/seated-cable-row-1.jpg','./img/shoulder-press-machine-0.jpg','./img/shoulder-press-machine-1.jpg','./img/side-plank-0.jpg','./img/side-plank-1.jpg','./img/sled-push-0.jpg','./img/sled-push-1.jpg','./img/smith-squat-0.jpg','./img/smith-squat-1.jpg','./img/walking-lunge-0.jpg','./img/walking-lunge-1.jpg'];
 self.addEventListener('install', e => {
@@ -7,8 +7,21 @@ self.addEventListener('install', e => {
 });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return; // push-server calls go straight to the network
   e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
     .catch(() => caches.match(e.request)));
+});
+// "Rest over" sent by push-server/ while the app is in the background. Silent on purpose: no sounds in this app.
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(data.title || 'GymGrog · rest over',
+    { body: data.body || 'Back to it.', tag: 'gymgrog-rest', renotify: true, silent: true, icon: './icon.svg' }));
+});
+// The browser can rotate a subscription; re-subscribe with the same key so the next rest still gets its alert.
+self.addEventListener('pushsubscriptionchange', e => {
+  const key = e.oldSubscription?.options?.applicationServerKey;
+  if (key) e.waitUntil(self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }).catch(() => {}));
 });
 // Tapping the silent "rest over" notification brings the app back.
 self.addEventListener('notificationclick', e => {

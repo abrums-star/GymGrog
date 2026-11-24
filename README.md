@@ -11,7 +11,8 @@ A tiny, offline-first gym companion built for one person: lose weight, train the
 - **Rest timer**: starts after every set and tells you what is next. Silent on purpose: vibration while the app is on screen, plus a silent system notification so the phone still shows something when you are in another app (allow notifications once from Settings; on iPhone add the app to the home screen first).
 - **Not this one**: ⇄ swaps an exercise for today, ✕ drops it from your program for good and puts another exercise for the same muscles in its place. Banned exercises can be brought back from the exercise library.
 - **Tracking**: rolling 14-day session count against a minimum and a goal, surf days, body weight trend with a chart, full history.
-- **Data**: everything lives in your browser's localStorage. Export and import JSON from Settings. No account, no server.
+- **Background alerts**: iPhone freezes a web app the moment you switch to Instagram, so the in-page timer cannot alert you there. A tiny server (`push-server/`, one Cloudflare Worker file) is told when the rest ends and sends a silent Web Push at that moment; the service worker shows it as the same notification. The timer never waits for the server: offline, or if the server is down, everything still works as before while the app is on screen. Needs the app installed on the home screen.
+- **Data**: everything lives in your browser's localStorage. Export and import JSON from Settings. No account; the only server is the optional push scheduler above, which stores nothing but the pending alert.
 
 ## Run it
 
@@ -26,3 +27,17 @@ then open http://localhost:8787 on your computer. To use it on your phone at the
 Research behind the program: `research/01-training-best-practices.md`.
 
 Exercise photos in `img/` come from the public-domain [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense).
+
+## Push server (background "rest over" alerts)
+
+`push-server/worker.js` is a dependency-free Cloudflare Worker. `POST /schedule { subscription, at, label, seq }` arms one Durable Object alarm per device that sends a silent push at `at`; `POST /cancel { endpoint, seq }` disarms it (Skip / OK). Free tier is plenty: a handful of requests per session.
+
+```bash
+cd push-server && npm install
+npm run keys                     # once: prints VAPID_PUBLIC_KEY and VAPID_PRIVATE_JWK
+# put the public key in wrangler.toml and in app.js (PUSH.vapid)
+npx wrangler login
+npx wrangler secret put VAPID_PRIVATE_JWK
+npm run deploy                   # prints the workers.dev URL -> app.js PUSH.endpoint
+npm test                         # encrypt/decrypt + VAPID round trip, no account needed
+```

@@ -137,7 +137,7 @@ function startSession(tpl) {
       sets: Array.from({ length: slot.sets }, () => ({ w: sg.w, r: sg.r, done: false })) };
   }).filter(Boolean);
   S.active = { id: uid(), date: today(), templateId: tpl.id, templateName: tpl.name, startedAt: Date.now(), entries, cur: 0, notes: '' };
-  save(); requestWakeLock(); ensureNotifyPermission(); go('session');
+  save(); requestWakeLock(); ensureNotifyPermission(); pushSubscription(true).catch(() => {}); go('session');
 }
 function finishSession() {
   const a = S.active; if (!a) return;
@@ -154,7 +154,7 @@ const timerEl = document.getElementById('timer');
 function startTimer(sec, label = '') {
   stopTimer(); if (!sec) return;
   timer = { end: Date.now() + sec * 1000, iv: setInterval(tickTimer, 250), over: false, label };
-  timerEl.classList.remove('hidden', 'over'); tickTimer();
+  timerEl.classList.remove('hidden', 'over'); tickTimer(); schedulePush();
 }
 function tickTimer() {
   if (!timer.iv) return;
@@ -164,7 +164,7 @@ function tickTimer() {
   timerEl.innerHTML = `<div class="t">${timer.over ? 'GO ' : ''}${m}:${String(sec).padStart(2, '0')}<small>${esc(timer.label)}</small></div>
     <button data-action="timer-sub">−30s</button><button data-action="timer-add">+30s</button><button data-action="timer-stop">${timer.over ? 'OK' : 'Skip'}</button>`;
 }
-function stopTimer() { clearInterval(timer.iv); timer.iv = null; timerEl.classList.add('hidden'); closeNotifications(); }
+function stopTimer() { const had = !!timer.iv; clearInterval(timer.iv); timer.iv = null; timerEl.classList.add('hidden'); closeNotifications(); if (had) cancelPush(); }
 // Silent by design: nobody else in the gym needs to hear it. Vibration while the app is on screen,
 // plus a silent system notification so the phone still shows something when you are in another app.
 function notify() {
@@ -185,6 +185,44 @@ function notifyState() {
   if (typeof Notification === 'undefined') return '<span class="pill never">not available here (on iPhone: add GymGrog to the home screen first)</span>';
   const p = Notification.permission;
   return p === 'granted' ? '<span class="pill like">allowed</span>' : p === 'denied' ? '<span class="pill never">blocked in the phone settings</span>' : '<span class="pill unknown">tap Save to allow</span>';
+}
+// ---------- background alerts (Web Push) ----------
+// iOS freezes the page's JavaScript as soon as you switch to another app, so the in-page timer above
+// cannot show anything there. A tiny server (push-server/) is told when the rest ends and sends a push
+// at that moment; sw.js turns it into the same silent notification. The timer itself never waits for
+// the network: every call here is fire-and-forget, and offline the in-page alert still works as before.
+const PUSH = { endpoint: 'https://gymgrog-push.abrums.workers.dev', vapid: 'BOFJTZXvboSVGDGWdPftqKAHDkIftavgcLv5hQUNTri4Z4pe-4sVZ9uqnMPlNNTNO_Jhh9evFvcXJMZWl8s7K_w' };
+let pushSeq = 0;
+function pushSupported() { return !!(PUSH.endpoint && 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined' && location.protocol !== 'file:'); }
+async function pushSubscription(create) {
+  if (!pushSupported() || Notification.permission !== 'granted') return null;
+  const reg = await navigator.serviceWorker.getRegistration(); if (!reg) return null;
+  const cur = await reg.pushManager.getSubscription(); if (cur || !create) return cur;
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(PUSH.vapid) });
+}
+function b64ToU8(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); s += '='.repeat((4 - s.length % 4) % 4); return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+function pushPost(path, body) {
+  return fetch(PUSH.endpoint + path, { method: 'POST', body: JSON.stringify(body), keepalive: true, headers: { 'Content-Type': 'text/plain' } });
+}
+function schedulePush() {
+  if (!S.settings.notify || !pushSupported()) return;
+  const at = timer.end, seq = ++pushSeq, label = timer.label || 'Back to it.';
+  pushSubscription(true).then(sub => { if (sub && timer.iv && timer.end === at) return pushPost('/schedule', { subscription: sub.toJSON(), at, label, seq }); }).catch(() => {});
+}
+function cancelPush() {
+  if (!pushSupported()) return;
+  const seq = ++pushSeq;
+  pushSubscription(false).then(sub => { if (sub) return pushPost('/cancel', { endpoint: sub.endpoint, seq }); }).catch(() => {});
+}
+// Settings line: filled in asynchronously because the subscription lookup is a promise.
+function pushState() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  let msg;
+  if (!PUSH.endpoint) msg = '<span class="pill unknown">not configured</span>';
+  else if (!('PushManager' in window) || typeof Notification === 'undefined') msg = standalone ? '<span class="pill never">not available on this phone</span>' : '<span class="pill never">needs the app installed on the home screen</span>';
+  else if (Notification.permission !== 'granted') msg = '<span class="pill unknown">allow notifications above first</span>';
+  else { msg = '<span class="pill unknown">checking…</span>'; pushSubscription(false).then(sub => { const el = document.getElementById('push-state'); if (el) el.innerHTML = sub ? '<span class="pill like">set up</span>' : '<span class="pill unknown">not yet</span> <button data-action="push-setup" style="width:auto;padding:4px 10px">Set up now</button>'; }).catch(() => {}); }
+  return `<span id="push-state">${msg}</span>`;
 }
 function nextUpLabel(ei) {
   const a = S.active; const en = a.entries[ei]; const ex = exById(en.exerciseId);
@@ -368,6 +406,7 @@ function settings() {
     <label>Target weight (kg)</label><input type="number" step="0.1" id="s-target" value="${s.targetWeight ?? ''}" placeholder="optional">
     <label><input type="checkbox" id="s-notify" ${s.notify ? 'checked' : ''} style="width:auto"> Silent notification when rest is over (shows even if you are in another app) ${notifyState()}</label>
     <label><input type="checkbox" id="s-vibrate" ${s.vibrate ? 'checked' : ''} style="width:auto"> Vibrate when rest is over</label>
+    <p class="muted small" style="margin:6px 0 0">Background alerts: ${pushState()}<br>iPhone pauses GymGrog when you switch to another app, so a small server sends the "rest over" alert at the right moment. It only works with GymGrog installed on the home screen (Share → Add to Home Screen) and needs a connection when the rest starts; without one the alert still shows while GymGrog is on screen.</p>
     <button class="primary" data-action="save-settings" style="margin-top:10px">Save</button></div>
   <div class="card"><h3>Rotation</h3><p class="muted small">Sessions that cycle as "next up", in this order. Untick one to keep it as a one-off in "Other session".</p>
     ${TEMPLATES.map(t => `<label class="row" style="margin:4px 0"><input type="checkbox" data-action="rot" data-id="${t.id}" ${rotation().some(x => x.id === t.id) ? 'checked' : ''} style="width:auto"> ${esc(t.name)} <span class="muted small">${esc(t.tagline)}</span></label>`).join('')}
@@ -416,14 +455,15 @@ document.addEventListener('click', e => {
       lb.classList.remove('hidden'); break; }
     case 'finish': S.active.notes = document.getElementById('notes').value; finishSession(); break;
     case 'discard': discardSession(); break;
-    case 'timer-add': timer.end += 30000; timer.over = false; timerEl.classList.remove('over'); tickTimer(); break;
-    case 'timer-sub': timer.end -= 30000; tickTimer(); break;
+    case 'timer-add': timer.end += 30000; timer.over = false; timerEl.classList.remove('over'); tickTimer(); schedulePush(); break;
+    case 'timer-sub': timer.end -= 30000; tickTimer(); schedulePush(); break;
     case 'rest': { const en = S.active.entries[+d.entry]; en.rest = Math.min(300, Math.max(15, en.rest + +d.d)); S.restOverride[en.exerciseId] = en.rest; save(); render();
       toast(`Rest ${en.rest}s for ${exById(en.exerciseId).name}, kept for next time too.`); break; }
     case 'timer-stop': stopTimer(); break;
     case 'del-workout': if (confirm('Delete this session?')) { S.workouts = S.workouts.filter(w => w.id !== d.id); save(); render(); } break;
     case 'swap': swapExercise(tplById(d.tpl), +d.slot); render(); break;
     case 'set-next': S.nextIdx = +d.idx; save(); render(); break;
+    case 'push-setup': pushSubscription(true).then(() => render()).catch(() => toast('Could not set up background alerts')); break;
     case 'save-settings': { const g = id => document.getElementById(id); S.settings = { ...S.settings, programStart: g('s-start').value || S.settings.programStart,
         blockDays: +g('s-block').value || 28, targetPer14: +g('s-min').value || 4, goalPer14: +g('s-goal').value || 6,
         targetWeight: parseFloat(g('s-target').value) || null, notify: g('s-notify').checked, vibrate: g('s-vibrate').checked }; save(); ensureNotifyPermission(); render(); toast('Saved'); break; }

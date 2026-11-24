@@ -127,3 +127,8 @@ body.reordering { user-select: none; -webkit-user-select: none; }
 .pill.easy { background: #14532d; color: var(--good); }
 .pill.hard { background: #713f12; color: var(--warn); }
 .pill.fail { background: #7f1d1d; color: var(--bad); }
+
+/* rest −/+ in the card header, target line above the sets, placeholder thumb for the user's own exercises */
+.rest button { padding: 2px 9px; margin: 0 5px; font-size: .9rem; line-height: 1.2; border-radius: 6px; vertical-align: baseline; }
+.plan { font-size: .85rem; margin-top: 8px; }
+.lib .thumb.none { display: inline-block; cursor: default; }

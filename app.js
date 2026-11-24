@@ -11,6 +11,8 @@ const blank = () => ({
   surfDays: [],         // 'YYYY-MM-DD'
   active: null,         // session in progress
   nextIdx: 0,           // index into TEMPLATES
+  restOverride: {},     // exerciseId -> rest seconds the user picked for it
+  customExercises: [],  // exercises added in the library (no photos)
 });
 let S = load();
 function load() {
@@ -19,6 +21,12 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { console.warn(e); } }
 if (!S.settings.programStart) { S.settings.programStart = today(); save(); }
+// The user's own exercises live in state; merge them into the pool so every lookup sees them.
+function syncCustom() {
+  for (let i = EXERCISES.length - 1; i >= 0; i--) if (EXERCISES[i].custom) EXERCISES.splice(i, 1);
+  (S.customExercises || []).forEach(c => EXERCISES.push({ ...c, custom: true }));
+}
+syncCustom();
 
 // ---------- helpers ----------
 function today(d = new Date()) { const z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; }
@@ -28,7 +36,7 @@ function fmtDate(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString(un
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 const exById = id => EXERCISES.find(e => e.id === id);
-const pics = ex => `<div class="pics">${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="${esc(ex.name)}, ${n ? 'end' : 'start'} position" loading="lazy" data-action="zoom" data-id="${ex.id}">`).join('')}</div>`;
+const pics = ex => ex.custom ? '' : `<div class="pics">${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="${esc(ex.name)}, ${n ? 'end' : 'start'} position" loading="lazy" data-action="zoom" data-id="${ex.id}">`).join('')}</div>`;
 const statusOf = ex => S.exerciseStatus[ex.id] || ex.status;
 function blockNumber(iso = today()) { return Math.max(0, Math.floor(daysBetween(S.settings.programStart, iso) / S.settings.blockDays)); }
 function daysToNextBlock() { const b = blockNumber() + 1; return b * S.settings.blockDays - daysBetween(S.settings.programStart, today()); }
@@ -64,7 +72,7 @@ function replaceLive(ei, ban) {
   const pool = poolFor(en.pattern); if (!ban && pool.length < 2) { noAlternative(old, en.pattern); return; }
   const i = pool.findIndex(x => x.id === en.exerciseId); const ex = pool[(i + 1) % pool.length];
   const sg = suggest(ex, { reps: en.reps });
-  en.exerciseId = ex.id; en.note = sg.note; en.sets.forEach(s => { if (!s.done) { s.w = sg.w; s.r = sg.r; } });
+  en.exerciseId = ex.id; en.note = sg.note; en.plan = { w: sg.w, r: sg.r }; en.rest = S.restOverride[ex.id] ?? en.rest; en.sets.forEach(s => { if (!s.done) { s.w = sg.w; s.r = sg.r; } });
   if (en.slot != null) S.overrides[`${blockNumber()}:${a.templateId}:${en.slot}`] = ex.id;
   if (timer.iv && timer.label.includes(old.name)) timer.label = timer.label.replace(old.name, ex.name);
   save(); render();
@@ -125,7 +133,7 @@ function startSession(tpl) {
   const entries = tpl.slots.map((slot, i) => {
     const ex = pickExercise(tpl, i); if (!ex) return null;
     const sg = suggest(ex, slot);
-    return { exerciseId: ex.id, slot: i, pattern: slot.pattern, rest: slot.rest, reps: slot.reps, note: sg.note,
+    return { exerciseId: ex.id, slot: i, pattern: slot.pattern, rest: S.restOverride[ex.id] ?? slot.rest, reps: slot.reps, note: sg.note, plan: { w: sg.w, r: sg.r },
       sets: Array.from({ length: slot.sets }, () => ({ w: sg.w, r: sg.r, done: false })) };
   }).filter(Boolean);
   S.active = { id: uid(), date: today(), templateId: tpl.id, templateName: tpl.name, startedAt: Date.now(), entries, cur: 0, notes: '' };
@@ -154,7 +162,7 @@ function tickTimer() {
   if (left <= 0 && !timer.over) { timer.over = true; timerEl.classList.add('over'); notify(); }
   const shown = Math.abs(left); const m = Math.floor(shown / 60), sec = shown % 60;
   timerEl.innerHTML = `<div class="t">${timer.over ? 'GO ' : ''}${m}:${String(sec).padStart(2, '0')}<small>${esc(timer.label)}</small></div>
-    <button data-action="timer-add">+30s</button><button data-action="timer-stop">${timer.over ? 'OK' : 'Skip'}</button>`;
+    <button data-action="timer-sub">−30s</button><button data-action="timer-add">+30s</button><button data-action="timer-stop">${timer.over ? 'OK' : 'Skip'}</button>`;
 }
 function stopTimer() { clearInterval(timer.iv); timer.iv = null; timerEl.classList.add('hidden'); closeNotifications(); }
 // Silent by design: nobody else in the gym needs to hear it. Vibration while the app is on screen,
@@ -258,11 +266,12 @@ function session() {
     const repLabel = unit === 'time' ? 'sec' : unit === 'min' ? 'min' : 'reps';
     const alone = poolFor(en.pattern).length < 2; // nothing to swap to: show it before the tap
     return `<div class="card ex ${ei === a.cur ? 'current' : ''} ${done ? 'done' : ''} ${ei === a.cur ? 'open' : ''}" data-entry="${ei}">
-      <div class="row between nowrap"><span class="grip" data-grip="${ei}" title="Hold and drag to reorder">☰</span><div class="grow"><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel} · rest ${en.rest}s</p></div>
+      <div class="row between nowrap"><span class="grip" data-grip="${ei}" title="Hold and drag to reorder">☰</span><div class="grow"><h3>${esc(ex.name)}</h3><p class="muted small">${esc(PATTERNS[en.pattern].name)} · ${en.sets.length} × ${en.reps[0]}${en.reps[1] !== en.reps[0] ? '–' + en.reps[1] : ''} ${repLabel}${en.rest > 0 || en.sets.length > 1 ? ` · <span class="rest">rest <button data-action="rest" data-entry="${ei}" data-d="-15" title="15 s less rest">−</button>${en.rest}s<button data-action="rest" data-entry="${ei}" data-d="15" title="15 s more rest">+</button></span>` : ''}</p></div>
         <div class="row nowrap"><button class="sm ${alone ? 'off' : ''}" data-action="swap-live" data-entry="${ei}" title="${alone ? 'No other exercise for this pattern' : 'Swap for another exercise today'}">⇄</button><button class="sm" data-action="ban-live" data-entry="${ei}" title="Never again: drop it and replace it">✕</button><button class="sm" data-action="cues" data-entry="${ei}">?</button></div></div>
       <p class="prev">${esc(en.note)}</p>
       <div class="cues">${pics(ex)}<p>${esc(ex.cues)}<br><em>${esc(ex.equipment)}</em></p><p class="small">☰ hold and drag to change the order (machine taken?) · ⇄ swap for today · ✕ never show this exercise again · tap a photo to enlarge</p></div>
-      <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg' : ''}</span><span class="hdr">${repLabel}</span><span class="hdr">✓</span>
+      ${planLine(en, ex, repLabel)}
+      <div class="sets"><span class="hdr">set</span><span class="hdr">${hasW ? 'kg done' : ''}</span><span class="hdr">${repLabel} done</span><span class="hdr">✓</span>
       ${en.sets.map((s, si) => `<span class="n">${si + 1}</span>
         ${hasW ? `<input type="number" step="${Math.abs(stepFor(ex)) || 0.5}" inputmode="decimal" value="${s.w ?? ''}" data-field="w" data-entry="${ei}" data-set="${si}" placeholder="kg">` : `<span class="n">${unit === 'bw' ? 'bw' : ''}</span>`}
         <input type="number" inputmode="numeric" value="${s.r ?? ''}" data-field="r" data-entry="${ei}" data-set="${si}">
@@ -276,6 +285,13 @@ function session() {
   <button class="ghost big" data-action="discard">Discard</button>`;
 }
 
+// What the app asked for, so the inputs below can hold what actually happened.
+function planLine(en, ex, repLabel) {
+  const p = en.plan; if (!p) return '';
+  const w = ex.unit === 'kg' ? (p.w != null ? `${p.w} kg × ` : 'your weight × ') : '';
+  const range = en.reps[0] !== en.reps[1] ? ` (${en.reps[0]}–${en.reps[1]} is the range)` : '';
+  return `<p class="plan"><b>Target: ${w}${p.r} ${repLabel}</b>${range}. Log what you actually did, then rate it.</p>`;
+}
 function pick() {
   const all = [...TEMPLATES, SHORT_TEMPLATE]; const rot = rotation().map(t => t.id); const nx = nextTemplate().id;
   return `<h1>Pick a session</h1><p class="muted">Any of these, any day. Sessions in the rotation advance the queue; the others do not.</p>
@@ -330,8 +346,16 @@ function program() {
   <h2>Exercise library</h2><p class="muted small">Like = picked first. Ok = in rotation. Never = out. Unknown = parked until you try it. Tap a photo to see the machine and the movement.</p>
   <div class="card lib">${Object.keys(PATTERNS).map(p => `<h3 style="margin-top:10px">${esc(PATTERNS[p].name)} <span class="muted small">${esc(PATTERNS[p].muscles)}</span></h3>
     ${EXERCISES.filter(e => e.pattern === p).map(e => { const st = statusOf(e);
-      return `<div class="item"><img class="thumb" src="img/${e.id}-0.jpg" alt="" loading="lazy" data-action="zoom" data-id="${e.id}"><span class="name">${esc(e.name)} ${e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
-        <select data-action="status" data-id="${e.id}">${['like', 'ok', 'never', 'unknown'].map(s => `<option value="${s}" ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`; }).join('')}`).join('')}</div>`;
+      return `<div class="item">${e.custom ? '<span class="thumb none"></span>' : `<img class="thumb" src="img/${e.id}-0.jpg" alt="" loading="lazy" data-action="zoom" data-id="${e.id}">`}<span class="name">${esc(e.name)} ${e.custom ? '<span class="pill new">yours</span>' : e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
+        <select data-action="status" data-id="${e.id}">${['like', 'ok', 'never', 'unknown'].map(s => `<option value="${s}" ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select>${e.custom ? `<button class="sm ghost" data-action="del-custom" data-id="${e.id}" title="Remove this exercise">×</button>` : ''}</div>`; }).join('')}`).join('')}</div>
+  <div class="card"><h3>Add an exercise</h3><p class="muted small">Goes into the pattern you pick and rotates with the others. No photo, but your cues show up in the session. For a machine you want with photos, ask and it can be added to the app.</p>
+    <label>Name</label><input id="c-name" placeholder="e.g. Hip thrust machine">
+    <label>Pattern</label><select id="c-pattern">${Object.keys(PATTERNS).map(k => `<option value="${k}">${esc(PATTERNS[k].name)}</option>`).join('')}</select>
+    <label>Equipment</label><input id="c-equip" placeholder="e.g. Hip thrust machine, seat 3">
+    <label>Measured in</label><select id="c-unit"><option value="kg">kg × reps</option><option value="bw">bodyweight reps</option><option value="time">seconds</option><option value="min">minutes</option></select>
+    <label>Weight increment (kg, for kg exercises)</label><input type="number" id="c-step" value="2.5" step="0.5" inputmode="decimal">
+    <label>Cues (how to do it well)</label><textarea id="c-cues" rows="2" placeholder="Feet flat, pause at the top…"></textarea>
+    <button class="primary" data-action="add-custom" style="margin-top:10px">Add to the library</button></div>`;
 }
 
 function settings() {
@@ -378,12 +402,24 @@ document.addEventListener('click', e => {
     case 'ban-live': replaceLive(+d.entry, true); break;
     case 'ban': { const t = tplById(d.tpl); const ex = pickExercise(t, +d.slot); if (!ex) break;
       if (!banExercise(ex, t.slots[+d.slot].pattern)) break; save(); render(); break; }
+    case 'add-custom': { const g = id => document.getElementById(id); const name = g('c-name').value.trim(); if (!name) { toast('Give it a name first.'); break; }
+      const unit = g('c-unit').value; const base = 'c-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      let id = base; for (let n = 2; exById(id); n++) id = `${base}-${n}`;
+      S.customExercises.push({ id, name, pattern: g('c-pattern').value, equipment: g('c-equip').value.trim() || '—', unit, step: unit === 'kg' ? Math.abs(parseFloat(g('c-step').value)) || 2.5 : 0, status: 'ok', cues: g('c-cues').value.trim() });
+      syncCustom(); save(); render(); toast(`${name} added, rated "ok".`); break; }
+    case 'del-custom': { const ex = exById(d.id); if (!ex) break;
+      if (S.active?.entries.some(e => e.exerciseId === d.id)) { toast(`${ex.name} is in the session in progress. Finish or discard it first.`); break; }
+      if (!confirm(`Remove ${ex.name} from the library? Past sessions keep their logs.`)) break;
+      S.customExercises = S.customExercises.filter(c => c.id !== d.id); delete S.exerciseStatus[d.id]; syncCustom(); save(); render(); break; }
     case 'zoom': { const ex = exById(d.id); if (!ex) break; const lb = document.getElementById('lightbox');
       lb.innerHTML = `<h3>${esc(ex.name)}</h3>${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="">`).join('')}<p>${esc(ex.cues)}</p><p class="muted small">${esc(ex.equipment)} · tap anywhere to close</p>`;
       lb.classList.remove('hidden'); break; }
     case 'finish': S.active.notes = document.getElementById('notes').value; finishSession(); break;
     case 'discard': discardSession(); break;
     case 'timer-add': timer.end += 30000; timer.over = false; timerEl.classList.remove('over'); tickTimer(); break;
+    case 'timer-sub': timer.end -= 30000; tickTimer(); break;
+    case 'rest': { const en = S.active.entries[+d.entry]; en.rest = Math.min(300, Math.max(15, en.rest + +d.d)); S.restOverride[en.exerciseId] = en.rest; save(); render();
+      toast(`Rest ${en.rest}s for ${exById(en.exerciseId).name}, kept for next time too.`); break; }
     case 'timer-stop': stopTimer(); break;
     case 'del-workout': if (confirm('Delete this session?')) { S.workouts = S.workouts.filter(w => w.id !== d.id); save(); render(); } break;
     case 'swap': swapExercise(tplById(d.tpl), +d.slot); render(); break;
@@ -394,7 +430,7 @@ document.addEventListener('click', e => {
     case 'export': { const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(blob);
       const l = document.createElement('a'); l.href = u; l.download = `gymgrog-${today()}.json`; l.click(); URL.revokeObjectURL(u); break; }
     case 'import': document.getElementById('imp').click(); break;
-    case 'reset': if (confirm('Delete ALL data? Export first if unsure.')) { S = blank(); S.settings.programStart = today(); save(); render(); } break;
+    case 'reset': if (confirm('Delete ALL data? Export first if unsure.')) { S = blank(); S.settings.programStart = today(); syncCustom(); save(); render(); } break;
   }
 });
 document.addEventListener('change', e => {
@@ -402,7 +438,7 @@ document.addEventListener('change', e => {
   if (t.dataset.action === 'status') { S.exerciseStatus[t.dataset.id] = t.value; save(); render(); }
   if (t.dataset.action === 'rot') { const ids = TEMPLATES.map(x => x.id).filter(id => id === t.dataset.id ? t.checked : rotation().some(r => r.id === id));
     if (!ids.length) { t.checked = true; toast('Keep at least one session in the rotation.'); return; } S.settings.rotation = ids; S.nextIdx = 0; save(); render(); }
-  if (t.id === 'imp' && t.files[0]) { const r = new FileReader(); r.onload = () => { try { const s = JSON.parse(r.result); if (!s.workouts) throw 0; S = { ...blank(), ...s }; save(); render(); alert('Imported'); } catch { alert('Not a GymGrog export'); } }; r.readAsText(t.files[0]); }
+  if (t.id === 'imp' && t.files[0]) { const r = new FileReader(); r.onload = () => { try { const s = JSON.parse(r.result); if (!s.workouts) throw 0; S = { ...blank(), ...s }; syncCustom(); save(); render(); alert('Imported'); } catch { alert('Not a GymGrog export'); } }; r.readAsText(t.files[0]); }
 });
 document.addEventListener('input', e => {
   const t = e.target; if (!t.dataset.field || !S.active) return;

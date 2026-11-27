@@ -5,6 +5,7 @@ Live: https://abrums-star.github.io/GymGrog/ (add it to your phone home screen; 
 A tiny, offline-first gym companion built for one person: lose weight, train the back, fit the gym around surfing.
 
 - **Program**: three rotating full-body sessions (A: pull + legs, B: push + legs, C: circuit) plus a short "surfed today" session. No calendar. The app always shows the next session up; you do it whenever you get to the gym.
+- **Phases**: 4-week blocks cycle Build (12–15 reps, 60 s rest, 15 min steady cardio) → Strength (8–10, 120 s, 10 min) → Power (6–8, 120 s, a pop-up power exercise, 8 min of intervals). Every session opens with a mobility round and rotator-cuff work. Suggestions adjust the weight when the rep range changes phase. See `research/02-structured-program.md`.
 - **More sessions**: Full body, Legs only, Upper body and Back & core are available any day from "Other session". By default they are one-offs that do not move the queue; tick them in Settings › Rotation to make them part of the cycle.
 - **Variation**: movement patterns are fixed, the exercise inside each pattern rotates every 4-week block from the pool of exercises you have rated like / ok. Parked ("unknown") and "never" exercises stay out.
 - **In session**: suggested weight from your last performance (progression when you hit the top of the rep range), set logging, coaching cues and two photos (start and end position) per exercise, tap to enlarge.

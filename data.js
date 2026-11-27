@@ -4,17 +4,21 @@
 // Patterns are fixed; the exercise inside a pattern rotates every 4-week block.
 
 export const PATTERNS = {
+  mobility: { name: 'Warm-up mobility', muscles: 'Thoracic spine, hips, shoulders' },
+  rotcuff:  { name: 'Shoulder health',  muscles: 'Rotator cuff, scapular stabilisers' },
   vpull:    { name: 'Vertical pull',   muscles: 'Lats, biceps' },
   hpull:    { name: 'Horizontal pull', muscles: 'Mid back, rear delts, biceps' },
   reardelt: { name: 'Rear delts / upper back', muscles: 'Rear delts, traps, rotator cuff' },
   hinge:    { name: 'Hip hinge',       muscles: 'Glutes, hamstrings, lower back' },
   squat:    { name: 'Squat / lunge',   muscles: 'Quads, glutes' },
-  legiso:   { name: 'Leg isolation',   muscles: 'Hamstrings or quads' },
+  legiso:   { name: 'Leg isolation',   muscles: 'Hamstrings, quads or glutes' },
   calf:     { name: 'Calves',          muscles: 'Calves' },
   push:     { name: 'Horizontal push', muscles: 'Chest, front delts, triceps' },
   shoulder: { name: 'Shoulders',       muscles: 'Delts' },
+  power:    { name: 'Pop-up power',    muscles: 'Whole body, fast' },
   core:     { name: 'Core',            muscles: 'Abs, obliques' },
-  cardio:   { name: 'Cardio finish',   muscles: 'Heart and lungs' },
+  cardio:   { name: 'Cardio finish',   muscles: 'Heart and lungs, steady' },
+  intervals:{ name: 'Intervals',       muscles: 'Heart and lungs, hard' },
 };
 
 // status: 'like' | 'ok' | 'never' | 'unknown'  (unknown = parked until you learn it)
@@ -116,40 +120,139 @@ export const EXERCISES = [
     cues: 'Handles at chest height, step forward, slight elbow bend. Bring hands together in a hugging arc, open slowly.' },
   { id: 'sled-push', name: 'Sled push', pattern: 'cardio', equipment: 'Sled, turf lane', step: 0, unit: 'min', status: 'unknown',
     cues: 'Hands on the high posts, lean in, drive with short fast steps. Walk it back. Brutal and fun.' },
+
+  // ---- Added 27 Nov 2026: more variety, surf-specific work, shoulder health, warm-up, intervals ----
+  // Warm-up mobility (one round at the start of every session, no weight)
+  { id: 'thoracic-rotation', name: 'Quadruped thoracic rotation', pattern: 'mobility', equipment: 'Floor', step: 0, unit: 'bw', status: 'ok', nophoto: true,
+    cues: 'On all fours, one hand behind the head. Drop that elbow to the opposite wrist, then open it to the ceiling and follow it with your eyes. Reps are per side. This is the rotation surfing asks for, taken out of the lower back.' },
+  { id: 'cat-camel', name: 'Cat-camel', pattern: 'mobility', equipment: 'Floor', step: 0, unit: 'bw', status: 'ok',
+    cues: 'On all fours. Round the whole spine up like a cat, then let it sag and lift the chest. Slow, breathe, no forcing.' },
+  { id: 'hip-flexor-stretch', name: 'Kneeling hip flexor stretch', pattern: 'mobility', equipment: 'Floor or mat', step: 0, unit: 'time', status: 'ok',
+    cues: 'Half-kneeling, squeeze the glute of the back leg and shift forward until the front of the hip pulls. Keep the ribs down. Seconds are per side.' },
+  { id: 'standing-hip-circles', name: 'Standing hip circles', pattern: 'mobility', equipment: 'Nothing', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Hand on something for balance. Lift the knee and draw the biggest circle you can with it, both directions. Reps are per side.' },
+  // Shoulder health (rotator cuff, every session, light and strict)
+  { id: 'band-external-rotation', name: 'Band external rotation', pattern: 'rotcuff', equipment: 'Light band', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Elbow glued to the ribs, forearm across the belly, rotate the hand out. Slow, no shrug. Reps are per arm. Surfers with shoulder pain lose exactly this motion.' },
+  { id: 'cable-external-rotation', name: 'Cable external rotation', pattern: 'rotcuff', equipment: 'Cable at elbow height', step: 2.5, unit: 'kg', status: 'ok',
+    cues: 'Same as the band version. Lightest plate on the stack, elbow tucked, rotate out and back under control. Reps are per arm.' },
+  { id: 'band-pull-apart', name: 'Band pull-apart', pattern: 'rotcuff', equipment: 'Light band', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Arms straight in front at shoulder height, pull the band apart until it touches the chest, squeeze the shoulder blades, return slowly.' },
+  { id: 'band-internal-rotation', name: 'Band internal rotation', pattern: 'rotcuff', equipment: 'Light band', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Elbow at the ribs, start with the hand out to the side, rotate it in across the belly. The muscle that pulls on every paddle stroke. Reps are per arm.' },
+  // Vertical pull
+  { id: 'straight-arm-pulldown', name: 'Straight-arm pulldown', pattern: 'vpull', equipment: 'Cable, straight bar or rope', step: 2.5, unit: 'kg', status: 'ok',
+    cues: 'Arms nearly straight, hinge slightly, sweep the bar from eye level down to the thighs. This is the paddle stroke with weight on it. Feel the lats, not the triceps.' },
+  { id: 'pullup', name: 'Pull-up', pattern: 'vpull', equipment: 'Bar', step: 0, unit: 'bw', status: 'unknown',
+    cues: 'Full hang, pull the chest to the bar, lower all the way. Use the assisted machine until you can do 5 clean ones.' },
+  // Horizontal pull
+  { id: 'inverted-row', name: 'Inverted row', pattern: 'hpull', equipment: 'Smith bar at hip height, or TRX', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Hang under the bar, body straight as a plank, pull the chest to the bar. Walk the feet back to make it harder, forward to make it easier.' },
+  { id: 'one-arm-cable-row', name: 'Single-arm cable row', pattern: 'hpull', equipment: 'Cable row station, single handle', step: 2.5, unit: 'kg', status: 'ok',
+    cues: 'One hand on the handle, other hand on the knee. Row to the hip, let the shoulder blade glide forward at the end of each rep. Reps are per arm.' },
+  // Rear delts
+  { id: 'cable-rear-delt-row', name: 'Rope rear-delt row', pattern: 'reardelt', equipment: 'Cable, rope, chest height', step: 2.5, unit: 'kg', status: 'ok',
+    cues: 'Elbows high and wide, pull the rope to the chin, hands finish beside the shoulders. Lighter than a normal row.' },
+  { id: 'reverse-fly-ext-rotation', name: 'Reverse fly with external rotation', pattern: 'reardelt', equipment: 'Light dumbbells, bench', step: 1, unit: 'kg', status: 'ok',
+    cues: 'Chest on an incline bench. Raise the dumbbells out to the sides, then rotate the thumbs up at the top. Very light. Weight is per dumbbell.' },
+  // Hinge
+  { id: 'single-leg-rdl', name: 'Single-leg Romanian deadlift', pattern: 'hinge', equipment: 'One kettlebell or dumbbell', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Weight in the hand opposite the standing leg. Hinge, let the back leg float up, keep the hips square. Balance is the point: the single-leg strength you use on the board. Reps are per leg.' },
+  { id: 'hip-thrust', name: 'Barbell hip thrust', pattern: 'hinge', equipment: 'Bench, barbell with pad', step: 5, unit: 'kg', status: 'unknown',
+    cues: 'Upper back on the bench, bar across the hips. Drive the hips up until the body is flat, squeeze the glutes one second, chin tucked. Lower under control.' },
+  // Squat / lunge (single-leg)
+  { id: 'db-split-squat', name: 'Dumbbell split squat', pattern: 'squat', equipment: 'Dumbbells', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Long stance, back knee kisses the floor straight down, front shin vertical. All reps on one leg, then switch. Weight is per dumbbell.' },
+  { id: 'db-step-up', name: 'Dumbbell step-up', pattern: 'squat', equipment: 'Dumbbells, box at knee height', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Whole foot on the box, stand up through that heel without pushing off the back foot. Step down slowly. Reps are per leg, weight per dumbbell.' },
+  // Leg isolation
+  { id: 'single-leg-glute-bridge', name: 'Single-leg glute bridge', pattern: 'legiso', equipment: 'Floor', step: 0, unit: 'bw', status: 'ok',
+    cues: 'On your back, one foot flat, other leg straight. Drive the hips up through the heel, squeeze, lower. Reps are per leg.' },
+  // Push
+  { id: 'incline-db-press', name: 'Incline dumbbell press', pattern: 'push', equipment: 'Incline bench, dumbbells', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Bench at 30 degrees. Press up and slightly back, lower until the elbows are just below the shoulders. The pop-up angle. Weight is per dumbbell.' },
+  { id: 'dip-machine', name: 'Dip machine', pattern: 'push', equipment: 'Assisted / seated dip machine', step: 5, unit: 'kg', status: 'unknown',
+    cues: 'Chest slightly forward, press down until the arms are straight, lower until the shoulders are level with the elbows.' },
+  // Shoulders
+  { id: 'db-shoulder-press', name: 'Dumbbell shoulder press', pattern: 'shoulder', equipment: 'Dumbbells, bench with back', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Start at ear height, press up until the arms are straight, lower under control. Ribs down, no arching. Weight is per dumbbell.' },
+  // Pop-up power (power phase only)
+  { id: 'box-jump', name: 'Box jump', pattern: 'power', equipment: 'Plyo box, knee height', step: 0, unit: 'bw', status: 'ok',
+    cues: 'Swing the arms, jump, land softly on the whole foot with bent knees. Step down, never jump down. Every rep fresh: rest between reps if needed.' },
+  { id: 'med-ball-slam', name: 'Medicine ball slam', pattern: 'power', equipment: 'Slam ball, 6 to 10 kg', step: 2, unit: 'kg', status: 'ok',
+    cues: 'Ball overhead, whole body reaches tall, then slam it into the floor as hard as you can with the lats and abs. Catch the bounce, reset.' },
+  { id: 'med-ball-chest-pass', name: 'Medicine ball chest pass', pattern: 'power', equipment: 'Medicine ball, wall', step: 1, unit: 'kg', status: 'ok',
+    cues: 'Feet staggered, ball at the chest, throw it into the wall as fast as you can and catch it. Fast hands: that is the pop-up.' },
+  { id: 'plank-to-popup', name: 'Plank to pop-up', pattern: 'power', equipment: 'Floor, mat', step: 0, unit: 'bw', status: 'ok', nophoto: true,
+    cues: 'Lie flat as if on the board, hands under the chest. Push and bring both feet under you in one movement, land in your surf stance, stand. Back down slowly. Same stance every rep.' },
+  { id: 'plyo-pushup', name: 'Plyo push-up', pattern: 'power', equipment: 'Floor', step: 0, unit: 'bw', status: 'unknown',
+    cues: 'Push-up so hard the hands leave the floor. Land with soft elbows. Do it from the knees first.' },
+  // Core (plank family)
+  { id: 'plank-shoulder-taps', name: 'Plank with shoulder taps', pattern: 'core', equipment: 'Floor', step: 0, unit: 'bw', status: 'ok', nophoto: true,
+    cues: 'High plank, feet wide. Tap the opposite shoulder without the hips twisting. Slow. Reps are total taps.' },
+  { id: 'pushup-to-side-plank', name: 'Push-up to side plank', pattern: 'core', equipment: 'Floor', step: 0, unit: 'bw', status: 'ok',
+    cues: 'One push-up, then rotate into a side plank with the arm to the ceiling, hold a second, come back, other side. Reps are total.' },
+  // Cardio
+  { id: 'stairmaster', name: 'Stair climber', pattern: 'cardio', equipment: 'Stair climber', step: 0, unit: 'min', status: 'ok',
+    cues: 'Hands light on the rails, whole foot on the step. A pace where you can still speak in short sentences.' },
+  { id: 'rope-jumping', name: 'Skipping rope', pattern: 'cardio', equipment: 'Jump rope', step: 0, unit: 'min', status: 'unknown',
+    cues: 'Small hops, wrists do the work. Stop and restart as often as needed; the minutes still count.' },
+  // Intervals (power phase cardio)
+  { id: 'bike-intervals', name: 'Bike intervals', pattern: 'intervals', equipment: 'Stationary bike', step: 0, unit: 'min', status: 'ok',
+    cues: '30 seconds hard, 90 seconds easy, repeat for the minutes shown. Hard means you could not talk. Two minutes easy to finish.' },
+  { id: 'rower-intervals', name: 'Rower intervals', pattern: 'intervals', equipment: 'Rowing machine', step: 0, unit: 'min', status: 'ok',
+    cues: '30 seconds hard, 90 seconds easy, repeat for the minutes shown. Legs first, then lean, then arms; reverse on the way back.' },
 ];
 
 // Session templates. Each slot names a pattern; the exercise comes from the pool.
 // reps: [min, max]. For 'time' exercises reps are seconds, for 'min' they are minutes.
 // rest: seconds. offset: shifts which exercise this slot gets so A and B differ.
+// Three 4-week phases that repeat. Main lifts take their reps and rest from the phase; warm-up,
+// shoulder health, rear delts, calves and core keep their own. The circuit session is never phased.
+export const PHASES = [
+  { id: 'build', name: 'Build', tagline: 'Higher reps, short rests: muscle and conditioning base, easiest on the joints.', reps: [12, 15], rest: 60, cardio: { pattern: 'cardio', min: 15 } },
+  { id: 'strength', name: 'Strength', tagline: 'Heavier, fewer reps, full rests: the weights go up.', reps: [8, 10], rest: 120, cardio: { pattern: 'cardio', min: 10 } },
+  { id: 'power', name: 'Power', tagline: 'Fast and explosive: pop-ups, jumps, throws on top of heavy work, intervals to finish.', reps: [6, 8], rest: 120, cardio: { pattern: 'intervals', min: 8 } },
+];
+
 export const TEMPLATES = [
+  // Slot flags: phased = reps and rest come from the current PHASE; phasedCardio = pattern and minutes
+  // come from the phase; onlyPhase = the slot exists in that phase only.
   {
     id: 'A', name: 'A: Pull + Legs', tagline: 'Back day. Paddle muscles.',
     slots: [
-      { pattern: 'vpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 90, offset: 0 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 0 },
+      { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 0 },
+      { pattern: 'vpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hinge',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'power',    sets: 3, reps: [5, 6],   rest: 90, offset: 0, onlyPhase: 'power' },
       { pattern: 'reardelt', sets: 3, reps: [15, 20], rest: 60, offset: 0 },
       { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 0 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 0, phasedCardio: true },
     ],
   },
   {
     id: 'B', name: 'B: Push + Legs', tagline: 'Chest, shoulders, legs. Pop-up power.',
     slots: [
-      { pattern: 'push',     sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'squat',    sets: 3, reps: [10, 12], rest: 90, offset: 1 },
-      { pattern: 'shoulder', sets: 3, reps: [12, 15], rest: 60, offset: 0 },
-      { pattern: 'hpull',    sets: 2, reps: [12, 15], rest: 60, offset: 1 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 1 },
+      { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 1 },
+      { pattern: 'push',     sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 60, offset: 1, phased: true },
+      { pattern: 'shoulder', sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hpull',    sets: 2, reps: [12, 15], rest: 60, offset: 1, phased: true },
+      { pattern: 'power',    sets: 3, reps: [5, 6],   rest: 90, offset: 1, onlyPhase: 'power' },
       { pattern: 'legiso',   sets: 3, reps: [12, 15], rest: 60, offset: 0 },
       { pattern: 'calf',     sets: 2, reps: [15, 20], rest: 45, offset: 0 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 1 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 1, phasedCardio: true },
     ],
   },
   {
-    id: 'C', name: 'C: Circuit', tagline: 'Lighter, faster, sweaty. Fat-loss day.',
+    id: 'C', name: 'C: Circuit', tagline: 'Lighter, faster, sweaty. Fat-loss day, same in every phase.',
     circuit: true,
     slots: [
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 2 },
       { pattern: 'hpull',    sets: 2, reps: [15, 15], rest: 45, offset: 2 },
       { pattern: 'squat',    sets: 2, reps: [15, 15], rest: 45, offset: 2 },
       { pattern: 'push',     sets: 2, reps: [15, 15], rest: 45, offset: 1 },
@@ -164,61 +267,69 @@ export const TEMPLATES = [
   {
     id: 'F', name: 'F: Full body', tagline: 'Everything once. The classic.',
     slots: [
-      { pattern: 'squat',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'push',     sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 1 },
-      { pattern: 'vpull',    sets: 2, reps: [10, 12], rest: 90, offset: 1 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 0 },
+      { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 2 },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'push',     sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hinge',    sets: 3, reps: [12, 15], rest: 60, offset: 1, phased: true },
+      { pattern: 'vpull',    sets: 2, reps: [12, 15], rest: 60, offset: 1, phased: true },
       { pattern: 'shoulder', sets: 2, reps: [12, 15], rest: 60, offset: 1 },
       { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 1 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 1, phasedCardio: true },
     ],
   },
   {
     id: 'L', name: 'L: Legs only', tagline: 'Quads, glutes, hamstrings, calves. Walk out slowly.',
     slots: [
-      { pattern: 'squat',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 90, offset: 1 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 1 },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hinge',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'squat',    sets: 3, reps: [12, 15], rest: 60, offset: 1, phased: true },
       { pattern: 'legiso',   sets: 3, reps: [12, 15], rest: 60, offset: 0 },
       { pattern: 'legiso',   sets: 3, reps: [12, 15], rest: 60, offset: 1 },
       { pattern: 'calf',     sets: 3, reps: [15, 20], rest: 45, offset: 0 },
       { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 1 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 1, phasedCardio: true },
     ],
   },
   {
     id: 'U', name: 'U: Upper body', tagline: 'Back, chest, shoulders. Legs get the day off.',
     slots: [
-      { pattern: 'vpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'push',     sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'shoulder', sets: 3, reps: [12, 15], rest: 60, offset: 0 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 2 },
+      { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 0 },
+      { pattern: 'vpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'push',     sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'shoulder', sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
       { pattern: 'hpull',    sets: 2, reps: [12, 15], rest: 60, offset: 1 },
       { pattern: 'reardelt', sets: 3, reps: [15, 20], rest: 60, offset: 0 },
       { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 1 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 0 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 0, phasedCardio: true },
     ],
   },
   {
     id: 'D', name: 'D: Back & core', tagline: 'All the paddle muscles, nothing else.',
     slots: [
-      { pattern: 'vpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hpull',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
-      { pattern: 'hinge',    sets: 3, reps: [10, 12], rest: 90, offset: 0 },
+      { pattern: 'mobility', sets: 1, reps: [8, 8],   rest: 0,  offset: 0 },
+      { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 1 },
+      { pattern: 'vpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
+      { pattern: 'hinge',    sets: 3, reps: [12, 15], rest: 60, offset: 0, phased: true },
       { pattern: 'hpull',    sets: 3, reps: [12, 15], rest: 60, offset: 1 },
       { pattern: 'reardelt', sets: 3, reps: [15, 20], rest: 60, offset: 0 },
       { pattern: 'core',     sets: 2, reps: [30, 60], rest: 45, offset: 0 },
       { pattern: 'core',     sets: 2, reps: [30, 45], rest: 45, offset: 1 },
-      { pattern: 'cardio',   sets: 1, reps: [10, 10], rest: 0,  offset: 0 },
+      { pattern: 'cardio',   sets: 1, reps: [15, 15], rest: 0,  offset: 0, phasedCardio: true },
     ],
   },
 ];
 
 // Short session for a day you surfed but still want to tick the box.
 export const SHORT_TEMPLATE = {
-  id: 'S', name: 'S: Short (surfed today)', tagline: '20 minutes. Back and core only.',
+  id: 'S', name: 'S: Short (surfed today)', tagline: '20 minutes. Shoulders, back and core only.',
   slots: [
+    { pattern: 'rotcuff',  sets: 2, reps: [15, 20], rest: 30, offset: 2 },
     { pattern: 'hpull',    sets: 2, reps: [12, 15], rest: 60, offset: 0 },
     { pattern: 'reardelt', sets: 2, reps: [15, 20], rest: 45, offset: 1 },
     { pattern: 'hinge',    sets: 2, reps: [12, 15], rest: 60, offset: 2 },

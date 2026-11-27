@@ -1,4 +1,4 @@
-import { PATTERNS, EXERCISES, TEMPLATES, SHORT_TEMPLATE, DEFAULT_SETTINGS } from './data.js';
+import { PATTERNS, EXERCISES, TEMPLATES, SHORT_TEMPLATE, DEFAULT_SETTINGS, PHASES } from './data.js';
 
 // ---------- state ----------
 const KEY = 'gymgrog.v1';
@@ -12,7 +12,6 @@ const blank = () => ({
   active: null,         // session in progress
   nextIdx: 0,           // index into TEMPLATES
   restOverride: {},     // exerciseId -> rest seconds the user picked for it
-  customExercises: [],  // exercises added in the library (no photos)
 });
 let S = load();
 function load() {
@@ -21,12 +20,6 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { console.warn(e); } }
 if (!S.settings.programStart) { S.settings.programStart = today(); save(); }
-// The user's own exercises live in state; merge them into the pool so every lookup sees them.
-function syncCustom() {
-  for (let i = EXERCISES.length - 1; i >= 0; i--) if (EXERCISES[i].custom) EXERCISES.splice(i, 1);
-  (S.customExercises || []).forEach(c => EXERCISES.push({ ...c, custom: true }));
-}
-syncCustom();
 
 // ---------- helpers ----------
 function today(d = new Date()) { const z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; }
@@ -36,9 +29,19 @@ function fmtDate(iso) { return new Date(iso + 'T12:00:00').toLocaleDateString(un
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 const exById = id => EXERCISES.find(e => e.id === id);
-const pics = ex => ex.custom ? '' : `<div class="pics">${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="${esc(ex.name)}, ${n ? 'end' : 'start'} position" loading="lazy" data-action="zoom" data-id="${ex.id}">`).join('')}</div>`;
+const pics = ex => ex.nophoto ? '' : `<div class="pics">${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="${esc(ex.name)}, ${n ? 'end' : 'start'} position" loading="lazy" data-action="zoom" data-id="${ex.id}">`).join('')}</div>`;
 const statusOf = ex => S.exerciseStatus[ex.id] || ex.status;
 function blockNumber(iso = today()) { return Math.max(0, Math.floor(daysBetween(S.settings.programStart, iso) / S.settings.blockDays)); }
+// Phase of a block: build, strength, power, repeating. Templates mark which slots follow it.
+function phaseFor(block = blockNumber()) { return PHASES[block % PHASES.length]; }
+function slotsFor(tpl, block = blockNumber()) {
+  const ph = phaseFor(block);
+  return tpl.slots.filter(sl => !sl.onlyPhase || sl.onlyPhase === ph.id).map(sl => {
+    if (sl.phased) return { ...sl, reps: ph.reps, rest: ph.rest };
+    if (sl.phasedCardio) return { ...sl, pattern: ph.cardio.pattern, reps: [ph.cardio.min, ph.cardio.min] };
+    return sl;
+  });
+}
 function daysToNextBlock() { const b = blockNumber() + 1; return b * S.settings.blockDays - daysBetween(S.settings.programStart, today()); }
 
 function poolFor(pattern) {
@@ -48,13 +51,13 @@ function poolFor(pattern) {
 function pickExercise(tpl, slotIdx, block = blockNumber()) {
   const key = `${block}:${tpl.id}:${slotIdx}`;
   const o = S.overrides[key]; if (o && exById(o) && ['like', 'ok'].includes(statusOf(exById(o)))) return exById(o);
-  const slot = tpl.slots[slotIdx]; const pool = poolFor(slot.pattern);
+  const slot = slotsFor(tpl, block)[slotIdx]; if (!slot) return null; const pool = poolFor(slot.pattern);
   if (!pool.length) return null;
   return pool[(block + slot.offset) % pool.length];
 }
 function swapExercise(tpl, slotIdx) {
-  const cur = pickExercise(tpl, slotIdx); const pool = poolFor(tpl.slots[slotIdx].pattern);
-  if (pool.length < 2) { noAlternative(cur, tpl.slots[slotIdx].pattern); return; }
+  const cur = pickExercise(tpl, slotIdx); const pattern = slotsFor(tpl)[slotIdx].pattern; const pool = poolFor(pattern);
+  if (pool.length < 2) { noAlternative(cur, pattern); return; }
   const i = pool.findIndex(e => e.id === cur?.id);
   S.overrides[`${blockNumber()}:${tpl.id}:${slotIdx}`] = pool[(i + 1) % pool.length].id; save();
 }
@@ -84,7 +87,7 @@ const tplById = id => id === 'S' ? SHORT_TEMPLATE : TEMPLATES.find(t => t.id ===
 function lastPerformance(exId) {
   for (let i = S.workouts.length - 1; i >= 0; i--) {
     const en = S.workouts[i].entries.find(x => x.exerciseId === exId && x.sets.some(s => s.done));
-    if (en) return { date: S.workouts[i].date, sets: en.sets.filter(s => s.done), feel: en.feel || null };
+    if (en) return { date: S.workouts[i].date, sets: en.sets.filter(s => s.done), feel: en.feel || null, range: en.reps || null };
   }
   return null;
 }
@@ -114,11 +117,15 @@ function suggest(ex, slot) {
   if (ex.unit === 'kg') {
     if (w == null) return { w: null, r: slot.reps[1], note: `${when}: ${reps} reps, no weight logged. Log the kg this time to get suggestions.` };
     const step = stepFor(ex); if (!step) steps = 0;
+    // New phase with a very different rep range: more reps means lighter, fewer reps means heavier.
+    const shift = last.range ? slot.reps[1] - last.range[1] : 0; let phase = '';
+    if (shift >= 3) { steps = -2; phase = ` New phase, ${slot.reps[0]}–${slot.reps[1]} reps now: lighter.`; }
+    else if (shift <= -3) { steps = Math.max(steps, 1); phase = ` New phase, ${slot.reps[0]}–${slot.reps[1]} reps now: heavier.`; }
     const nw = Math.max(0, +(w + steps * step).toFixed(1));
     const assisted = step < 0; // assisted pull-up: the number is the assistance, so "harder" means a smaller number
     const plates = step !== ex.step ? ` (${Math.abs(step)} kg steps on this machine)` : '';
-    if (steps > 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}. ${assisted ? 'Less assistance: ' : 'Go up to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
-    if (steps < 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg ${felt}. ${assisted ? 'More assistance: ' : 'Back down to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
+    if (steps > 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}.${phase} ${assisted ? 'Less assistance: ' : 'Go up to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
+    if (steps < 0) return { w: nw, r: slot.reps[0], note: `${when}: ${w} kg × ${reps}, ${felt}.${phase} ${assisted ? 'More assistance: ' : 'Back down to '}${nw} kg${plates}, aim for ${slot.reps[0]}.` };
     return { w, r: slot.reps[1], note: `${when}: ${w} kg × ${reps}, ${felt}. Same weight, aim for ${slot.reps[1]}.` };
   }
   const r = last.sets[last.sets.length - 1].r ?? slot.reps[1];
@@ -130,7 +137,7 @@ function suggest(ex, slot) {
 
 // ---------- session lifecycle ----------
 function startSession(tpl) {
-  const entries = tpl.slots.map((slot, i) => {
+  const entries = slotsFor(tpl).map((slot, i) => {
     const ex = pickExercise(tpl, i); if (!ex) return null;
     const sg = suggest(ex, slot);
     return { exerciseId: ex.id, slot: i, pattern: slot.pattern, rest: S.restOverride[ex.id] ?? slot.rest, reps: slot.reps, note: sg.note, plan: { w: sg.w, r: sg.r },
@@ -263,13 +270,15 @@ function home() {
     <button class="primary big" data-action="go" data-view="session">Continue</button></div>`;
   const tpl = nextTemplate(); const days = last14(); const n = days.filter(d => d.work).length;
   const cls = n >= S.settings.goalPer14 ? 'good' : n >= S.settings.targetPer14 ? 'warn' : 'bad';
-  const preview = tpl.slots.map((s, i) => pickExercise(tpl, i)).filter(Boolean).map(e => esc(e.name)).join(' · ');
+  const preview = slotsFor(tpl).map((s, i) => pickExercise(tpl, i)).filter(Boolean).map(e => esc(e.name)).join(' · ');
   const lastW = S.weights[S.weights.length - 1]; const t = today();
   const surfedToday = S.surfDays.includes(t);
   const lastSession = S.workouts[S.workouts.length - 1];
+  const ph = phaseFor(); const nextPh = phaseFor(blockNumber() + 1);
   return `<h1>GymGrog</h1>
-  <div class="card accent"><div class="row between"><h3>Next up: ${esc(tpl.name)}</h3><span class="pill">Block ${blockNumber() + 1}</span></div>
+  <div class="card accent"><div class="row between"><h3>Next up: ${esc(tpl.name)}</h3><span class="pill new">Block ${blockNumber() + 1} · ${ph.name}</span></div>
     <p class="muted">${esc(tpl.tagline)}</p><p class="small">${preview}</p>
+    <p class="muted small">${ph.name} phase: ${ph.reps[0]}–${ph.reps[1]} reps on the main lifts, ${ph.rest} s rest. ${daysToNextBlock()} days left, then ${nextPh.name}.</p>
     <button class="primary big" data-action="start" data-tpl="${tpl.id}">Start session</button>
     <div class="row" style="margin-top:8px"><button class="grow" data-action="start" data-tpl="S">Short session (20 min)</button><button class="grow" data-action="go" data-view="pick">Other session</button></div>
   </div>
@@ -333,8 +342,8 @@ function planLine(en, ex, repLabel) {
 function pick() {
   const all = [...TEMPLATES, SHORT_TEMPLATE]; const rot = rotation().map(t => t.id); const nx = nextTemplate().id;
   return `<h1>Pick a session</h1><p class="muted">Any of these, any day. Sessions in the rotation advance the queue; the others do not.</p>
-  ${all.map(t => { const preview = t.slots.map((sl, i) => pickExercise(t, i)).filter(Boolean).map(e => esc(e.name)).join(' · ');
-    const mins = t.id === 'S' ? 20 : Math.round(t.slots.reduce((m, sl) => m + sl.sets * (sl.rest + 40) / 60, 0) + 10);
+  ${all.map(t => { const preview = slotsFor(t).map((sl, i) => pickExercise(t, i)).filter(Boolean).map(e => esc(e.name)).join(' · ');
+    const mins = t.id === 'S' ? 20 : Math.round(slotsFor(t).reduce((m, sl) => m + sl.sets * (sl.rest + 40) / 60, 0) + 10);
     return `<div class="card ${t.id === nx ? 'accent' : ''}"><div class="row between"><h3>${esc(t.name)}</h3><span class="pill ${rot.includes(t.id) ? 'like' : ''}">${t.id === nx ? 'next up' : rot.includes(t.id) ? 'in rotation' : 'one-off'}</span></div>
       <p class="muted small">${esc(t.tagline)} · about ${mins} min</p><p class="small">${preview}</p>
       <button class="primary" data-action="start" data-tpl="${t.id}">Start ${t.id}</button></div>`; }).join('')}`;
@@ -375,25 +384,20 @@ function chart(ws) {
 
 function program() {
   const all = [...TEMPLATES, SHORT_TEMPLATE];
-  return `<h1>Program</h1><p class="muted">Block ${blockNumber() + 1} · exercises rotate in ${daysToNextBlock()} days. Patterns stay fixed, the exercise inside each one changes every ${S.settings.blockDays} days from the pool you rate "like" or "ok". Tap ⇄ to swap one for this block, ✕ to drop an exercise for good.</p>
+  const ph = phaseFor();
+  return `<h1>Program</h1><p class="muted">Block ${blockNumber() + 1}, <b>${ph.name}</b> phase · next block in ${daysToNextBlock()} days. Every session starts with a mobility round and shoulder-health work, then the main lifts, core and a cardio finish. The exercise inside each pattern changes every ${S.settings.blockDays} days from the pool you rate "like" or "ok"; the phase changes with it. Tap ⇄ to swap one for this block, ✕ to drop an exercise for good.</p>
+  <div class="card"><h3>The 12-week cycle</h3><table>${PHASES.map((x, i) => `<tr><td>${x.id === ph.id ? '<b>' + esc(x.name) + '</b> <span class="pill new">now</span>' : esc(x.name)}</td><td class="muted small">${x.reps[0]}–${x.reps[1]} reps, ${x.rest} s rest, ${x.cardio.min} min ${x.cardio.pattern === 'intervals' ? 'intervals' : 'steady cardio'}${x.id === 'power' ? ', plus a pop-up power exercise' : ''}</td></tr><tr><td colspan="2" class="muted small" style="padding-bottom:8px">${esc(x.tagline)}</td></tr>`).join('')}</table></div>
   ${all.map(t => `<div class="card"><div class="row between"><h3>${esc(t.name)}</h3>${rotation().some(x => x.id === t.id) ? '<span class="pill like">in rotation</span>' : t.id === 'S' ? '' : '<span class="pill">one-off</span>'}</div><p class="muted small">${esc(t.tagline)}</p>
-    ${t.slots.map((s, i) => { const ex = pickExercise(t, i); const pool = poolFor(s.pattern);
+    ${slotsFor(t).map((s, i) => { const ex = pickExercise(t, i); const pool = poolFor(s.pattern);
       return `<div class="row between nowrap" style="padding:6px 0;border-bottom:1px solid #334155"><div><div>${ex ? esc(ex.name) : '<span class="muted">no exercise available</span>'}</div><div class="muted small">${esc(PATTERNS[s.pattern].name)} · ${s.sets}×${s.reps[0]}${s.reps[1] !== s.reps[0] ? '–' + s.reps[1] : ''}</div></div>
         <div class="row nowrap"><button class="sm ${pool.length < 2 ? 'off' : ''}" data-action="swap" data-tpl="${t.id}" data-slot="${i}" title="${pool.length < 2 ? 'No other exercise for this pattern' : 'Swap for this block'}">⇄</button><button class="sm ${pool.length < 2 ? 'off' : ''}" data-action="ban" data-tpl="${t.id}" data-slot="${i}" title="Never again">✕</button></div></div>`; }).join('')}
   </div>`).join('')}
   <h2>Exercise library</h2><p class="muted small">Like = picked first. Ok = in rotation. Never = out. Unknown = parked until you try it. Tap a photo to see the machine and the movement.</p>
   <div class="card lib">${Object.keys(PATTERNS).map(p => `<h3 style="margin-top:10px">${esc(PATTERNS[p].name)} <span class="muted small">${esc(PATTERNS[p].muscles)}</span></h3>
     ${EXERCISES.filter(e => e.pattern === p).map(e => { const st = statusOf(e);
-      return `<div class="item">${e.custom ? '<span class="thumb none"></span>' : `<img class="thumb" src="img/${e.id}-0.jpg" alt="" loading="lazy" data-action="zoom" data-id="${e.id}">`}<span class="name">${esc(e.name)} ${e.custom ? '<span class="pill new">yours</span>' : e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
-        <select data-action="status" data-id="${e.id}">${['like', 'ok', 'never', 'unknown'].map(s => `<option value="${s}" ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select>${e.custom ? `<button class="sm ghost" data-action="del-custom" data-id="${e.id}" title="Remove this exercise">×</button>` : ''}</div>`; }).join('')}`).join('')}</div>
-  <div class="card"><h3>Add an exercise</h3><p class="muted small">Goes into the pattern you pick and rotates with the others. No photo, but your cues show up in the session. For a machine you want with photos, ask and it can be added to the app.</p>
-    <label>Name</label><input id="c-name" placeholder="e.g. Hip thrust machine">
-    <label>Pattern</label><select id="c-pattern">${Object.keys(PATTERNS).map(k => `<option value="${k}">${esc(PATTERNS[k].name)}</option>`).join('')}</select>
-    <label>Equipment</label><input id="c-equip" placeholder="e.g. Hip thrust machine, seat 3">
-    <label>Measured in</label><select id="c-unit"><option value="kg">kg × reps</option><option value="bw">bodyweight reps</option><option value="time">seconds</option><option value="min">minutes</option></select>
-    <label>Weight increment (kg, for kg exercises)</label><input type="number" id="c-step" value="2.5" step="0.5" inputmode="decimal">
-    <label>Cues (how to do it well)</label><textarea id="c-cues" rows="2" placeholder="Feet flat, pause at the top…"></textarea>
-    <button class="primary" data-action="add-custom" style="margin-top:10px">Add to the library</button></div>`;
+      return `<div class="item">${e.nophoto ? '<span class="thumb none"></span>' : `<img class="thumb" src="img/${e.id}-0.jpg" alt="" loading="lazy" data-action="zoom" data-id="${e.id}">`}<span class="name">${esc(e.name)} ${e.status === 'unknown' ? '<span class="pill new">new to you</span>' : ''}</span>
+        <select data-action="status" data-id="${e.id}">${['like', 'ok', 'never', 'unknown'].map(s => `<option value="${s}" ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`; }).join('')}`).join('')}</div>
+`;
 }
 
 function settings() {
@@ -440,17 +444,8 @@ document.addEventListener('click', e => {
     case 'swap-live': replaceLive(+d.entry, false); break;
     case 'ban-live': replaceLive(+d.entry, true); break;
     case 'ban': { const t = tplById(d.tpl); const ex = pickExercise(t, +d.slot); if (!ex) break;
-      if (!banExercise(ex, t.slots[+d.slot].pattern)) break; save(); render(); break; }
-    case 'add-custom': { const g = id => document.getElementById(id); const name = g('c-name').value.trim(); if (!name) { toast('Give it a name first.'); break; }
-      const unit = g('c-unit').value; const base = 'c-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      let id = base; for (let n = 2; exById(id); n++) id = `${base}-${n}`;
-      S.customExercises.push({ id, name, pattern: g('c-pattern').value, equipment: g('c-equip').value.trim() || '—', unit, step: unit === 'kg' ? Math.abs(parseFloat(g('c-step').value)) || 2.5 : 0, status: 'ok', cues: g('c-cues').value.trim() });
-      syncCustom(); save(); render(); toast(`${name} added, rated "ok".`); break; }
-    case 'del-custom': { const ex = exById(d.id); if (!ex) break;
-      if (S.active?.entries.some(e => e.exerciseId === d.id)) { toast(`${ex.name} is in the session in progress. Finish or discard it first.`); break; }
-      if (!confirm(`Remove ${ex.name} from the library? Past sessions keep their logs.`)) break;
-      S.customExercises = S.customExercises.filter(c => c.id !== d.id); delete S.exerciseStatus[d.id]; syncCustom(); save(); render(); break; }
-    case 'zoom': { const ex = exById(d.id); if (!ex) break; const lb = document.getElementById('lightbox');
+      if (!banExercise(ex, slotsFor(t)[+d.slot].pattern)) break; save(); render(); break; }
+    case 'zoom': { const ex = exById(d.id); if (!ex || ex.nophoto) break; const lb = document.getElementById('lightbox');
       lb.innerHTML = `<h3>${esc(ex.name)}</h3>${[0, 1].map(n => `<img src="img/${ex.id}-${n}.jpg" alt="">`).join('')}<p>${esc(ex.cues)}</p><p class="muted small">${esc(ex.equipment)} · tap anywhere to close</p>`;
       lb.classList.remove('hidden'); break; }
     case 'finish': S.active.notes = document.getElementById('notes').value; finishSession(); break;
@@ -470,7 +465,7 @@ document.addEventListener('click', e => {
     case 'export': { const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(blob);
       const l = document.createElement('a'); l.href = u; l.download = `gymgrog-${today()}.json`; l.click(); URL.revokeObjectURL(u); break; }
     case 'import': document.getElementById('imp').click(); break;
-    case 'reset': if (confirm('Delete ALL data? Export first if unsure.')) { S = blank(); S.settings.programStart = today(); syncCustom(); save(); render(); } break;
+    case 'reset': if (confirm('Delete ALL data? Export first if unsure.')) { S = blank(); S.settings.programStart = today(); save(); render(); } break;
   }
 });
 document.addEventListener('change', e => {
@@ -478,7 +473,7 @@ document.addEventListener('change', e => {
   if (t.dataset.action === 'status') { S.exerciseStatus[t.dataset.id] = t.value; save(); render(); }
   if (t.dataset.action === 'rot') { const ids = TEMPLATES.map(x => x.id).filter(id => id === t.dataset.id ? t.checked : rotation().some(r => r.id === id));
     if (!ids.length) { t.checked = true; toast('Keep at least one session in the rotation.'); return; } S.settings.rotation = ids; S.nextIdx = 0; save(); render(); }
-  if (t.id === 'imp' && t.files[0]) { const r = new FileReader(); r.onload = () => { try { const s = JSON.parse(r.result); if (!s.workouts) throw 0; S = { ...blank(), ...s }; syncCustom(); save(); render(); alert('Imported'); } catch { alert('Not a GymGrog export'); } }; r.readAsText(t.files[0]); }
+  if (t.id === 'imp' && t.files[0]) { const r = new FileReader(); r.onload = () => { try { const s = JSON.parse(r.result); if (!s.workouts) throw 0; S = { ...blank(), ...s }; save(); render(); alert('Imported'); } catch { alert('Not a GymGrog export'); } }; r.readAsText(t.files[0]); }
 });
 document.addEventListener('input', e => {
   const t = e.target; if (!t.dataset.field || !S.active) return;

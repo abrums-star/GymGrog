@@ -132,3 +132,5 @@ body.reordering { user-select: none; -webkit-user-select: none; }
 .rest button { padding: 2px 9px; margin: 0 5px; font-size: .9rem; line-height: 1.2; border-radius: 6px; vertical-align: baseline; }
 .plan { font-size: .85rem; margin-top: 8px; }
 .lib .thumb.none { display: inline-block; cursor: default; }
+.card > table { width: 100%; border-collapse: collapse; }
+.card > table td { padding: 4px 4px 0; vertical-align: top; }
